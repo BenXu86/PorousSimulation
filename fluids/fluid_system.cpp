@@ -10,7 +10,9 @@
 #include "mtime.h"
 #include "fluid_system.h"
 #include "fluid_system_host.cuh"
-
+//计时
+#include <Mmsystem.h>
+#pragma comment(lib, "Winmm.lib")
 double scaleP,scaleP3,scaledis;
 //double a[18],b[6];
 Vector3DF volumes[6],softBoundary[2],emit[2];
@@ -150,7 +152,9 @@ void FluidSystem::Setup ( bool bStart )
 	printf("%f %f\n",m_Param[PBSTIFF],m_Param[PEXTSTIFF]);
 	FluidParamCUDA ( m_Param[PSIMSCALE], m_Param[PSMOOTHRADIUS], m_Param[PRADIUS], m_Param[PMASS], m_Param[PRESTDENSITY],
 		*(float3*)& m_Vec[PBOUNDMIN], *(float3*)& m_Vec[PBOUNDMAX], m_Param[PEXTSTIFF],
-		m_Param[PINTSTIFF],m_Param[PBSTIFF], m_Param[PVISC],    m_Param[PEXTDAMP],   m_Param[PFORCE_MIN], m_Param[PFORCE_MAX],  m_Param[PFORCE_FREQ], m_Param[PGROUND_SLOPE], grav.x, grav.y, grav.z, m_Param[PACCEL_LIMIT], m_Param[PVEL_LIMIT] );
+		m_Param[PINTSTIFF],m_Param[PBSTIFF], m_Param[PVISC],    m_Param[PEXTDAMP],   
+		m_Param[PFORCE_MIN], m_Param[PFORCE_MAX],  m_Param[PFORCE_FREQ], m_Param[PGROUND_SLOPE], 
+		grav.x, grav.y, grav.z, m_Param[PACCEL_LIMIT], m_Param[PVEL_LIMIT] );
 	ParamUpdateCUDA(m_Toggle[HIDEBOUND], m_Toggle[HIDEFLUID], m_Toggle[HIDESOLID]);
 	//FluidParamCUDA ( m_Param[PSIMSCALE], m_Param[PSMOOTHRADIUS], m_Param[PRADIUS], m_Param[PMASS], m_Param[PRESTDENSITY], *(float3*)& m_Vec[PBOUNDMIN], *(float3*)& m_Vec[PBOUNDMAX], m_Param[PBSTIFF],   m_Param[PINTSTIFF],                  m_Param[PVISC],    m_Param[PEXTDAMP],   m_Param[PFORCE_MIN], m_Param[PFORCE_MAX],  m_Param[PFORCE_FREQ], m_Param[PGROUND_SLOPE], grav.x, grav.y, grav.z, m_Param[PACCEL_LIMIT], m_Param[PVEL_LIMIT] );
 	FluidParamCUDA_projectu(vfactor, fpfactor, spfactor,bdamp);
@@ -238,7 +242,7 @@ void FluidSystem::RunSimulateMultiCUDAFull ()
 {
 	mint::Time start;
 	start.SetSystemTime ( ACC_NSEC );
-
+	//printf("start time is %f\n", start.)
 	//printf("RunSimulateMultiCUDAFull\n");
 	InitialSortCUDA( 0x0, 0x0, 0x0 );
 	record ( PTIME_INSERT, "Insert CUDA", start );			
@@ -248,14 +252,14 @@ void FluidSystem::RunSimulateMultiCUDAFull ()
 	CountingSortFullCUDA_( 0x0 );
 	record ( PTIME_SORT, "Full Sort CUDA", start );
 	start.SetSystemTime ( ACC_NSEC );
-
+	
 	MfPredictAdvection(m_Time);
 	record(PTIME_SORT, "Predict Advection CUDA", start);
 	start.SetSystemTime(ACC_NSEC);
-
+	
 	PressureSolve(0,NumPoints());
 	ComputeElasticForceCUDA();
-	//ComputePorousForceCUDA();
+	
 	//计算u_mk,存储到mf_vel_phrel中
 	//MfComputeDriftVelCUDA();                                          //case 1-diff
 	//record ( PTIMEDRIFTVEL, "Drift Velocity CUDA", start );
@@ -274,10 +278,9 @@ void FluidSystem::RunSimulateMultiCUDAFull ()
 	//start.SetSystemTime ( ACC_NSEC );
 
 	LeapFrogIntegration(m_Time);
-
 	record ( PTIME_ADVANCE, "Advance CUDA", start );
-	
 	TransferFromCUDA ();	// return for rendering
+
 }
 extern bool    bPause;
 void FluidSystem::Run (int width, int height)
@@ -290,8 +293,11 @@ void FluidSystem::Run (int width, int height)
 	m_Param[ PTIME_FORCE ] = 0.0;
 	m_Param[ PTIME_ADVANCE ] = 0.0;
 	ParamUpdateCUDA(m_Toggle[HIDEBOUND], m_Toggle[HIDEFLUID], m_Toggle[HIDESOLID]);
-	RunSimulateMultiCUDAFull();
 
+	//DWORD start = timeGetTime();
+	RunSimulateMultiCUDAFull();
+	//DWORD end = timeGetTime();
+	//printf("simulate time %d\n", end - start);
 	/*if ( mMode == RUN_RECORD ) {
 		start.SetSystemTime ( ACC_NSEC );
 		Record ();
@@ -331,7 +337,6 @@ void FluidSystem::Run (int width, int height)
 	m_Frame++;
 
 	//outputepsilon(epsilonfile);
-
 	if(example == 2 && m_Frame == upframe)
 		SetYan(CHANGE_DEN,1);
 }
@@ -1604,7 +1609,9 @@ void FluidSystem::SetupBoundary(Vector3DF min, Vector3DF max, float spacing, Vec
 			distance2 = min(max.x-x, y - min.y);
 			distance3 = min(max.z - z, distance1);
 			distance3 = min(distance3, distance2);
-			if (distance3 >  2*spacing)
+			distance1 = max.y - y;
+			distance3 = min(distance3, distance1);
+			if (distance3 >  3*spacing)
 				continue;
 			/*if ( xy < c2 ) {
 			zp = xy / int(dx);

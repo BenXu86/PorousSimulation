@@ -78,8 +78,9 @@
 		uint*			midsort;
 		//End sorting
 		
-		float*			absorbedPercent;
-		float3*			volumeFlux;
+		float*			fluidPercent;
+		float3*			poroDriftVel;
+		float*			percentChange;
 		//elastic material
 		uint*	particleID;
 		float*	initialVolume;
@@ -96,10 +97,12 @@
 		float*  porosity;
 		float*  pressure_water;
 		float*  AbsorbedFluidVolume;
-		float*  Saturation;
+		//float*  Saturation;
 		float*  DeltaSaturation;
 		float*  elasticVolume;
 		float3*  gradPressure;
+		float3* poroVel;
+		float3* fluidVel;
 		//IISPH
 		float3*			dii;
 		float*			aii;
@@ -151,8 +154,10 @@
 	#define BUF_DIJPJ		(BUF_AII+sizeof(float))
 	#define BUF_DELTADENSITY	(BUF_DIJPJ+sizeof(float)*3)
 	#define BUF_RESTVOLUME   (BUF_DELTADENSITY+sizeof(float))
-	#define BUF_VOLUME	(BUF_RESTVOLUME+sizeof(float))
-	#define BUF_SOURCE	(BUF_VOLUME+sizeof(float))
+	#define BUF_VOLUME		(BUF_RESTVOLUME+sizeof(float))
+	#define BUF_SOURCE		(BUF_VOLUME+sizeof(float))
+	//porous
+	#define BUF_FVEL		(BUF_SOURCE+sizeof(float))
 	// Fluid Parameters (stored on both host and device)
 	struct FluidParams {
 		int				numThreads, numBlocks;
@@ -238,6 +243,7 @@
 
 	__global__ void initDensity(bufList buf,int pnum);
 	__global__ void updateVelocity(float time, bufList buf, int pnum);
+
 	__global__ void computeMidVel(bufList buf, int pnum);
 	//multi fluid
 	//calculating functions
