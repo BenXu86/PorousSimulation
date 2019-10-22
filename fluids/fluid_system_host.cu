@@ -1,5 +1,3 @@
-
-
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
@@ -1893,7 +1891,7 @@ __global__ void mfPreComputeDensity ( bufList buf, int pnum )
 	// Compute Density & Pressure
 	sum += simData.r2 * simData.r2 * simData.r2 * buf.mf_restmass[i];
 	sum_solid += simData.r2 * simData.r2 * simData.r2 * buf.mf_restmass[i];
-	sum_fluid += simData.r2 * simData.r2 * simData.r2 * buf.mf_restmass[i];
+	//sum_fluid += simData.r2 * simData.r2 * simData.r2 * buf.mf_restmass[i];
 
 	sum = sum * simData.poly6kern;
 	sum_solid = sum_solid * simData.poly6kern;
@@ -3047,8 +3045,12 @@ __global__ void updatePosition(float time, bufList buf, int pnum){
 			newvisc += buf.mf_alpha[i*MAX_FLUIDNUM+fcount] * simData.mf_visc[fcount];
 		}
 
-		if(buf.MFtype[i]==0)
+		if (buf.MFtype[i] == 0)
+		{
 			buf.mf_restdensity[i] = newdens;
+			//update rest mass xuben
+			//buf.mf_restmass[i] = buf.fluidPercent[i] * simData.pmass;
+		}
 		buf.mf_visc[i] = newvisc;
 
 		//Color Setting
@@ -3105,7 +3107,7 @@ __global__ void updateVelocity(float time, bufList buf, int pnum)
 	// Leapfrog integration						
 	//accel = buf.maccel[i];
 	if (buf.MFtype[i]==1||buf.fluidPercent[i] == 0)
-		accel1 = make_float3(0, 0, 0);
+		accel1 = (buf.vel_mid[i]-buf.mveleval[i])/simData.mf_dt;
 	else
 		accel1 = ((buf.vel_mid[i] - (1- buf.fluidPercent[i])*buf.poroVel[i])/ buf.fluidPercent[i]
 				-buf.fluidVel[i])/simData.mf_dt;
@@ -3126,7 +3128,7 @@ __global__ void updateVelocity(float time, bufList buf, int pnum)
 			buf.mveleval[i] = buf.fluidVel[i]*buf.fluidPercent[i]
 				+ (1-buf.fluidPercent[i])*buf.poroVel[i];
 		else
-			buf.mveleval[i] = buf.vel_mid[i] + simData.mf_dt*accel;
+			buf.mveleval[i] = buf.mveleval[i] + simData.mf_dt*accel;
 		
 		if( buf.MFtype[i]==0)
 		{
@@ -3804,9 +3806,9 @@ __global__ void ComputeStrainAndStress(bufList buf, int pnum)
 	//	//		index, stress[0], stress[4], stress[8], alpha);
 	//if (index % 10000 == 0)
 	//	printf("delta sigma is %f\n", alpha);
-	stress[0] -= alpha;
-	stress[4] -= alpha;
-	stress[8] -= alpha;
+	//stress[0] -= alpha;
+	//stress[4] -= alpha;
+	//stress[8] -= alpha;
 
 	for (int l = 0; l < 9; ++l)
 		buf.gradDeform[i * 9 + l] = stress[l];
@@ -4328,7 +4330,7 @@ __global__ void ComputePorePressure(bufList buf, int pnum)
 	//	printf("particle %d's type is %d, pressure water is %f\n", 
 	//		i, buf.MFtype[i], buf.pressure_water[i]);
 }
-__device__ float3 contributeDarcyFlux(int i, int cell, bufList buf, float3& poroVel, float3&viscosity)
+__device__ float3 contributeDarcyFlux(int i, int cell, bufList buf, float3& poroVel, float3&viscosity, int&count)
 {
 	float dsq, c;
 	register float d2 = simData.psimscale * simData.psimscale;
@@ -4354,10 +4356,9 @@ __device__ float3 contributeDarcyFlux(int i, int cell, bufList buf, float3& poro
 		j = buf.mgrid[cndx];
 		/*if (buf.MFtype[j] != 1)
 			continue;*/
-		if (buf.misbound[j])
+		if (buf.misbound[j]||buf.MFtype[j] == 0)
 			continue;
-		if (buf.MFtype[i] == buf.MFtype[j] && buf.MFtype[i] == 0)
-			continue;
+
 		dist = (buf.mpos[i] - buf.mpos[j]);		// dist in cm
 		dsq = (dist.x*dist.x + dist.y*dist.y + dist.z*dist.z);
 		if (!(dsq < r2 && dsq > 0))
@@ -4365,14 +4366,16 @@ __device__ float3 contributeDarcyFlux(int i, int cell, bufList buf, float3& poro
 		dist *= simData.psimscale;
 		dsq = sqrt(dsq*d2);
 		c = (simData.psmoothradius - dsq);
-		pmterm = dist / dsq*c*c*simData.spikykern*buf.volume[j];
+		pmterm = dist / dsq*c*c*simData.spikykern*buf.mf_restmass[j]*buf.density_solid[buf.elasticID[j]];
 		//pmterm = dist / dsq*c*c*simData.spikykern*buf.mf_restmass[i]/buf.mf_restdensity[j];
 		sum += pmterm*(buf.pressure_water[j] - buf.pressure_water[i]);
 		poroVel += pmterm * buf.pressure_water[j];
 		
 		c = simData.r2 - dsq*dsq;
-		//viscosity += pow(c, 3)*simData.poly6kern*
-		//	buf.mf_restmass[i] / buf.mf_restdensity[j] * (buf.mveleval[j]-buf.mveleval[i]);
+		//viscosity += pow(c, 3)*simData.poly6kern*(1-buf.fluidPercent[i])*pow(simData.psmoothradius/2,3)*
+		//	 (buf.mveleval[j]-buf.mveleval[i]);
+		viscosity += buf.mveleval[j];
+		count++;
 	}
 	return sum;
 }
@@ -4392,9 +4395,10 @@ __global__ void ComputeDarcyFlux(bufList buf, int pnum)
 	float3 term = make_float3(0, 0, 0);
 	float3 viscosity = make_float3(0, 0, 0);
 	buf.poroVel[i] = make_float3(0, 0, 0);
+	int count = 0;
 	for (int c = 0; c < simData.gridAdjCnt; c++)
 	{
-		buf.gradPressure[i] += contributeDarcyFlux(i, gc + simData.gridAdj[c], buf, buf.poroVel[i], viscosity);
+		buf.gradPressure[i] += contributeDarcyFlux(i, gc + simData.gridAdj[c], buf, buf.poroVel[i], viscosity, count);
 	}
 	//buf.gradPressure[index] -= simData.mf_dens[1] * simData.pgravity;
 	buf.gradPressure[i] *= -simData.permeability/simData.mf_visc[1];
@@ -4407,7 +4411,8 @@ __global__ void ComputeDarcyFlux(bufList buf, int pnum)
 			buf.mveleval[i].x, buf.mveleval[i].y, buf.mveleval[i].z,
 			dot(buf.mveleval[i], buf.mveleval[i]));
 	}*/
-	buf.poroVel[i] += viscosity;
+	if(count!=0)
+		buf.poroVel[i] += viscosity/count;
 	term = 300*buf.fluidPercent[i]*simData.pgravity*simData.mf_dt*simData.rest_porosity;
 
 	/*if (i % 1000 == 0 && dot(buf.gradPressure[i], buf.gradPressure[i]) != 0&&buf.fluidPercent[i]!=0)
@@ -4645,6 +4650,7 @@ __global__ void AbsorbPercentCorrection(bufList buf, int pnum)
 		if (buf.MFtype[i] == 0&&buf.fluidPercent[i]>1) {
 			buf.percentChange[i] = buf.fluidPercent[i] - 1;
 			buf.fluidPercent[i] = 1;
+			
 		}
 		if(buf.MFtype[i]==1)
 		{
@@ -4652,6 +4658,8 @@ __global__ void AbsorbPercentCorrection(bufList buf, int pnum)
 			buf.fluidPercent[i] = simData.rest_porosity;
 		}
 	}
+	//if (buf.MFtype[i] == 0 && buf.fluidPercent[i] < 0.1)
+	//	printf("fluid particle %d's fluid percent is %f\n", i, buf.fluidPercent[i]);
 	//if (buf.MFtype[i] == 1 && buf.fluidPercent[i] > simData.rest_porosity)
 		
 }
@@ -4820,6 +4828,8 @@ __device__ float3 contributePressureForce(int i,float3 pos,int cell, bufList buf
 		//	continue;
 		/*if (buf.MFtype[i] == 1 && buf.MFtype[i] == buf.MFtype[j])
 			continue;*/
+		//if (buf.MFtype[i] == buf.MFtype[j] && buf.MFtype[i] == 1)
+		//	continue;
 		dist = (buf.mpos[i] - buf.mpos[j])*simData.psimscale;
 		dsq2 = dot(dist, dist);
 		dsq = sqrt(dsq2);
@@ -4882,8 +4892,8 @@ __global__ void ComputePressureForce(bufList buf, int pnum)
 	buf.maccel[i] = buf.mforce[i];
 	//if(isnan(dot(buf.mforce[i],buf.mforce[i])))
 	//if (dot(buf.mforce[i],buf.mforce[i])>10 && !buf.misbound[i])
-	//	printf("particle %d's type is %d, pressure force is (%.10f,%.10f,%.10f),count is %d, press is %.10f, aii is %.10f, deltadensity is %.10f\n",
-	//		i, buf.MFtype[i], buf.mforce[i].x, buf.mforce[i].y, buf.mforce[i].z, count, buf.mpress[i],buf.aii[i], buf.delta_density[i]);
+	//	printf("particle %d's type is %d, pressure force is (%.10f,%.10f,%.10f),count is %d, press is %.10f, aii is %.10f, deltadensity is %.10f, rest mass is %.10f, volume is %.10f\n",
+	//		i, buf.MFtype[i], buf.mforce[i].x, buf.mforce[i].y, buf.mforce[i].z, count, buf.mpress[i],buf.aii[i], buf.delta_density[i],buf.mf_restmass[i],buf.volume[i]);
 	//if (i % 30000 == 0)
 	//	printf("volume is %.10f, m/rho is %.10f\n", buf.volume[i], buf.mf_restmass[i] * buf.mdensity[i]);
 }
@@ -4924,7 +4934,8 @@ __device__ float3 contributeViscosity(int i, float3 pos, int cell, bufList buf)
 		vmr = buf.mveleval[i] - buf.mveleval[j]; //This is different from that in contributeAlphaChange()
 		//vmr = buf.vel_mid[i] - buf.vel_mid[j];
 		vmterm = cmterm * (buf.mf_visc[i] + buf.mf_visc[j]) * buf.mdensity[i];
-		if ((buf.MFtype[i] == 0 && buf.MFtype[j] == 0))
+		if(buf.MFtype[i]==buf.MFtype[j])
+		//if ((buf.MFtype[i] == 0 && buf.MFtype[j] == 0))
 			force += vmterm * vmr;
 
 		//force between fluid and solid
@@ -5487,7 +5498,11 @@ __device__ float contributeVolume(int i, int cell, bufList buf)
 		if (dsq2 > r2 || dsq2 <= 0)
 			continue;
 		c = r2 - dsq2;
-		sum += buf.rest_volume[j] * pow(c, 3)*simData.poly6kern;
+		if(buf.MFtype[i]==0)
+			sum += buf.fluidPercent[i]*buf.rest_volume[j] * pow(c, 3)*simData.poly6kern;
+		else
+			sum += buf.rest_volume[j] * pow(c, 3)*simData.poly6kern;
+
 
 	}
 	return sum;
