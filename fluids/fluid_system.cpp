@@ -258,8 +258,9 @@ void FluidSystem::RunSimulateMultiCUDAFull ()
 	start.SetSystemTime(ACC_NSEC);
 	
 	PressureSolve(0,NumPoints());
+
 	ComputeElasticForceCUDA();
-	
+
 	//º∆À„u_mk,¥Ê¥¢µΩmf_vel_phrel÷–
 	//MfComputeDriftVelCUDA();                                          //case 1-diff
 	//record ( PTIMEDRIFTVEL, "Drift Velocity CUDA", start );

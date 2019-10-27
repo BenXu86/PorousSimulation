@@ -81,6 +81,7 @@
 		float*			fluidPercent;
 		float3*			poroDriftVel;
 		float*			percentChange;
+		float*			divDarcyFlux;
 		//elastic material
 		uint*	particleID;
 		float*	initialVolume;
@@ -90,7 +91,9 @@
 		float3* kernelGrad;
 		float3*	kernelRotate;
 		uint*	neighborIndex;//该粒子在邻居链表中所在的索引
-		float3*	signDistance;//distance between solid particle to surface
+		float*	colorField;
+		uint*	isSurface;//0 means internal particles, 1 means surface particle
+		float3* normal;//固体表面的法线方向,指向外部
 		float*	volumetricStrain;
 		//porous
 		float*  density_solid;
@@ -145,7 +148,8 @@
 	//#define BUF_GRADDEFORM	(BUF_BORNID+sizeof(int))
 	#define BUF_ELASTICID	(BUF_INDICATOR+sizeof(int))
 	//#define BUF_ROTATION	(BUF_ELASTICID+sizeof(uint))
-	#define BUF_ABSORBEDPERCENT	(BUF_ELASTICID+sizeof(float))
+	#define BUF_PERCENTCHANGE	(BUF_ELASTICID+sizeof(int))
+	#define BUF_ABSORBEDPERCENT	(BUF_PERCENTCHANGE+sizeof(float))
 	//IISPH
 	#define BUF_PRESSPRE	(BUF_ABSORBEDPERCENT+sizeof(float))
 	#define BUF_DII			(BUF_PRESSPRE+sizeof(float))
@@ -279,6 +283,8 @@
 	__global__ void ComputeFinalDeformGrad(bufList buf, int pnum);
 	__global__ void ComputeStrainAndStress(bufList buf, int pnum);
 	__global__ void ComputeElasticForce(bufList buf, int pnum);
+	__global__ void ComputeElasticColorField(bufList buf, int pnum);
+	__global__ void ComputeElasticNormal(bufList buf, int pnum);
 	//porous functions
 	
 	__global__ void ComputeGradWaterPressure(bufList buf, int pnum);
@@ -294,6 +300,7 @@
 	__global__ void ComputeAbsorbedVolume(bufList buf, int pnum);
 	__global__ void ComputePorePressure(bufList buf, int pnum);
 	__global__ void ComputeDarcyFlux(bufList buf, int pnum);
+	__global__ void ComputeFPChange(bufList buf, int pnum);
 	//implicit incompressible SPH
 	__global__ void ComputePressureForce(bufList buf, int pnum);
 	__global__ void ComputeCriterion(bufList buf, int pnum);
