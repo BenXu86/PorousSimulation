@@ -4787,7 +4787,7 @@ __global__ void ComputeFPCorrection(bufList buf, int pnum)
 	buf.totalDis[i] = 0;
 	buf.solidCount[i] = 0;
 	int j=-1,t;
-	float sigma = 1;
+	float sigma = 0.01;
 	float step;
 	for (int c = 0; c < simData.gridAdjCnt; c++)
 	{
@@ -4807,12 +4807,10 @@ __global__ void ComputeFPCorrection(bufList buf, int pnum)
 	}
 	else
 	{
-		if (buf.isSurface[j] == 0 || dot(buf.normal[buf.elasticID[j]], buf.mpos[j] - buf.mpos[i]) > 0)
+		if (buf.isSurface[buf.elasticID[j]] == 0 || dot(buf.normal[buf.elasticID[j]], buf.mpos[j] - buf.mpos[i]) > 0)
 			isInside = true;
 	}
-	//if (i % 1000 == 0)
-	//	printf("j=%d, distance is %f, r is %f\n", j, sqrt(distance), simData.psmoothradius);
-	
+
 	if (distance < 0.01*simData.r2||isInside)
 	{
 		step = -oldFP;
@@ -4829,6 +4827,10 @@ __global__ void ComputeFPCorrection(bufList buf, int pnum)
 		buf.poroVel[i] = ((1 - oldFP)*buf.poroVel[i] - buf.percentChange[i] * buf.fluidVel[i]) / (1 - oldFP - buf.percentChange[i]);
 	if (buf.percentChange[i] > 0)
 		buf.fluidVel[i] = (oldFP*buf.fluidVel[i] + buf.percentChange[i] * buf.poroVel[i]) / (oldFP + buf.percentChange[i]);
+	//if (i % 1000 == 0)
+	//	printf("j=%d, distance is %f, r is %f, percentChange is %f,old fp is %f, fp is %f\n", 
+	//		j, sqrt(distance), simData.psmoothradius, buf.percentChange[i], oldFP, buf.fluidPercent[i]);
+
 }
 __device__ float3 contributePoroVelocity(int i, int cell, bufList buf, float&normalize) 
 {
@@ -5188,26 +5190,26 @@ void ComputePorousForceCUDA()
 	cudaThreadSynchronize();
 
 	//fluid flow between fluids and solid surface
-	//ComputeFluidFlux << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
-	//error = cudaGetLastError();
-	//if (error != cudaSuccess) {
-	//	fprintf(stderr, "CUDA ERROR: compute fluid flux CUDA: %s\n", cudaGetErrorString(error));
-	//}
-	//cudaThreadSynchronize();
+	ComputeFluidFlux << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
+	error = cudaGetLastError();
+	if (error != cudaSuccess) {
+		fprintf(stderr, "CUDA ERROR: compute fluid flux CUDA: %s\n", cudaGetErrorString(error));
+	}
+	cudaThreadSynchronize();
 
-	//ComputeFluidChange << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
-	//error = cudaGetLastError();
-	//if (error != cudaSuccess) {
-	//	fprintf(stderr, "CUDA ERROR: compute fluid flux CUDA: %s\n", cudaGetErrorString(error));
-	//}
-	//cudaThreadSynchronize();
+	ComputeFluidChange << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
+	error = cudaGetLastError();
+	if (error != cudaSuccess) {
+		fprintf(stderr, "CUDA ERROR: compute fluid flux CUDA: %s\n", cudaGetErrorString(error));
+	}
+	cudaThreadSynchronize();
 
-	//ComputeFluidAdvance << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
-	//error = cudaGetLastError();
-	//if (error != cudaSuccess) {
-	//	fprintf(stderr, "CUDA ERROR: compute fluid advance CUDA: %s\n", cudaGetErrorString(error));
-	//}
-	//cudaThreadSynchronize();
+	ComputeFluidAdvance << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
+	error = cudaGetLastError();
+	if (error != cudaSuccess) {
+		fprintf(stderr, "CUDA ERROR: compute fluid advance CUDA: %s\n", cudaGetErrorString(error));
+	}
+	cudaThreadSynchronize();
 
 	//fluid flow in solids
 	ComputeDarcyFlux << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
