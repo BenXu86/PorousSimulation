@@ -37,7 +37,8 @@
 		float3*			maccel;
 		float3*			vel_mid;		//intermediate velocity
 		float3*			mveleval;		//mixture velocity u_m
-		float3*			mforce;
+		float3*			mforce;			//fluid&solid force
+		float3*			poroForce;		//poro force
 		float*			mpress;
 		float*			mdensity;		//周围rest_mass求和的倒数
 		uint*			mgcell;
@@ -99,7 +100,9 @@
 		float*  density_solid;
 		float*  porosity;
 		float*  pressure_water;
-		float*  AbsorbedFluidVolume;
+		int*	solidCount;
+		float*	totalDis;
+		//float*  AbsorbedFluidVolume;
 		//float*  Saturation;
 		float*  DeltaSaturation;
 		float*  elasticVolume;
@@ -162,6 +165,7 @@
 	#define BUF_SOURCE		(BUF_VOLUME+sizeof(float))
 	//porous
 	#define BUF_FVEL		(BUF_SOURCE+sizeof(float))
+	#define BUF_POROVEL		(BUF_FVEL+sizeof(float3))
 	// Fluid Parameters (stored on both host and device)
 	struct FluidParams {
 		int				numThreads, numBlocks;
@@ -288,19 +292,23 @@
 	//porous functions
 	
 	__global__ void ComputeGradWaterPressure(bufList buf, int pnum);
-	__global__ void ComputePoroForce(bufList buf, int pnum);
+	
 	__global__ void ComputeSaturation(bufList buf, int pnum);
 	__global__ void ComputeDeltaS(bufList buf, int pnum);
 	__global__ void ComputeAbsorbVel(bufList buf, int pnum);
 	__global__ void ComputeAbsorbPercent(bufList buf, int pnum);
-	__global__ void AbsorbPercentCorrection(bufList buf, int pnum);
+	__global__ void AbsorbPercentCorrection(bufList buf, int pnum, float divDarcyFlux);
 	__global__ void ComputePorousViscosity(bufList buf, int pnum);
+	__global__ void ComputePoroVelocity(bufList buf, int pnum);
 	//new method
-	__global__ void ComputeVolumeFlux(bufList buf, int pnum);
+	__global__ void ComputeFluidAdvance(bufList buf, int pnum);
 	__global__ void ComputeAbsorbedVolume(bufList buf, int pnum);
 	__global__ void ComputePorePressure(bufList buf, int pnum);
 	__global__ void ComputeDarcyFlux(bufList buf, int pnum);
-	__global__ void ComputeFPChange(bufList buf, int pnum);
+	__global__ void ComputeFluidFlux(bufList buf, int pnum);
+	__global__ void ComputeFluidChange(bufList buf, int pnum);
+	__global__ void ComputeFPCorrection(bufList buf, int pnum);
+	__global__ void ComputeSPCorrection(bufList buf, int pnum);
 	//implicit incompressible SPH
 	__global__ void ComputePressureForce(bufList buf, int pnum);
 	__global__ void ComputeCriterion(bufList buf, int pnum);

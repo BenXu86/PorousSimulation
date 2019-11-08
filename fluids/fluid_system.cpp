@@ -258,7 +258,7 @@ void FluidSystem::RunSimulateMultiCUDAFull ()
 	start.SetSystemTime(ACC_NSEC);
 	
 	PressureSolve(0,NumPoints());
-
+	ComputePorousForceCUDA();
 	ComputeElasticForceCUDA();
 
 	//¼ÆËãu_mk,´æ´¢µ½mf_vel_phrelÖÐ
@@ -1612,7 +1612,7 @@ void FluidSystem::SetupBoundary(Vector3DF min, Vector3DF max, float spacing, Vec
 			distance3 = min(distance3, distance2);
 			distance1 = max.y - y;
 			distance3 = min(distance3, distance1);
-			if (distance3 >  3*spacing)
+			if (distance3 >  4*spacing)
 				continue;
 			/*if ( xy < c2 ) {
 			zp = xy / int(dx);
