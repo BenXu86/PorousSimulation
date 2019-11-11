@@ -113,6 +113,7 @@
 		float3*			dii;
 		float*			aii;
 		float3*			DijPj;
+		float3*			pressForce;
 		float*			inter_density;  //intermediate density
 		float*			delta_density;
 		float*			mpress_pre;
@@ -227,7 +228,7 @@
 		float			bulkModulus_grains;
 		float			bulkModulus_solid;
 		float			bulkModulus_fluid;
-
+		float			CoCompressibility;
 
 		bool			HideBound, HideFluid, HideSolid;
 	};
@@ -297,7 +298,7 @@
 	__global__ void ComputeDeltaS(bufList buf, int pnum);
 	__global__ void ComputeAbsorbVel(bufList buf, int pnum);
 	__global__ void ComputeAbsorbPercent(bufList buf, int pnum);
-	__global__ void AbsorbPercentCorrection(bufList buf, int pnum, float divDarcyFlux);
+	__global__ void AbsorbPercentCorrection(bufList buf, int pnum);
 	__global__ void ComputePorousViscosity(bufList buf, int pnum);
 	__global__ void ComputePoroVelocity(bufList buf, int pnum);
 	//new method
@@ -311,6 +312,7 @@
 	__global__ void ComputeSPCorrection(bufList buf, int pnum);
 	//implicit incompressible SPH
 	__global__ void ComputePressureForce(bufList buf, int pnum);
+	__global__ void ApplyPressureForce(bufList buf, int pnum);
 	__global__ void ComputeCriterion(bufList buf, int pnum);
 	__global__ void PressCorrection(bufList buf, int pnum);
 	//gravity,viscosity,etc

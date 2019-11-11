@@ -86,6 +86,7 @@ void cudaInit(int argc, char **argv)
 	checkCudaErrors ( cudaMalloc((void**)&fbuf.dii, sizeof(float) * 3));
 	checkCudaErrors ( cudaMalloc((void**)&fbuf.aii, sizeof(float)));
 	checkCudaErrors ( cudaMalloc((void**)&fbuf.DijPj, sizeof(float) * 3));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.pressForce, sizeof(float) * 3));
 	checkCudaErrors ( cudaMalloc((void**)&fbuf.mpress_pre, sizeof(float)));
 
 	checkCudaErrors ( cudaMalloc((void**)&fbuf.rest_volume, sizeof(float)));
@@ -249,6 +250,7 @@ void FluidClearCUDA ()
 	checkCudaErrors(cudaFree(fbuf.dii));
 	checkCudaErrors(cudaFree(fbuf.aii));
 	checkCudaErrors(cudaFree(fbuf.DijPj));
+	checkCudaErrors(cudaFree(fbuf.pressForce));
 	checkCudaErrors(cudaFree(fbuf.mpress_pre));
 	checkCudaErrors(cudaFree(fbuf.inter_density));
 	checkCudaErrors(cudaFree(fbuf.delta_density));
@@ -328,6 +330,7 @@ void FluidSetupCUDA ( int num, int gsrch, int3 res, float3 size, float3 delta, f
 	checkCudaErrors(cudaMalloc((void**)&fbuf.aii, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
 	checkCudaErrors(cudaMalloc((void**)&fbuf.dii, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)*3));
 	checkCudaErrors(cudaMalloc((void**)&fbuf.DijPj, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)*3));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.pressForce, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float) * 3));
 
 	//checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mcluster,	fcuda.szPnts*sizeof(uint) ) );	
 	temp_size += EMIT_BUF_RATIO * (sizeof(float)*4+2*sizeof(float)*3);
@@ -454,6 +457,10 @@ void PorousParamCUDA(float bulkModulus_porous, float bulkModulus_grains, float b
 	fcuda.bulkModulus_grains = bulkModulus_grains;
 	fcuda.bulkModulus_solid = bulkModulus_solid;
 	fcuda.bulkModulus_fluid = bulkModulus_fluid;
+
+	float alpha = 1 - bulkModulus_porous / bulkModulus_grains;
+	fcuda.CoCompressibility = bulkModulus_solid*bulkModulus_fluid / ((alpha - fcuda.rest_porosity)*bulkModulus_fluid + fcuda.rest_porosity*bulkModulus_solid);
+
 }
 void FluidParamCUDA ( float ss, float sr, float pr, float mass, float rest, float3 bmin, float3 bmax, float estiff, float istiff,float pbstiff, float visc, float damp, float fmin, float fmax, float ffreq, float gslope, float gx, float gy, float gz, float al, float vl )
 {
@@ -3085,8 +3092,8 @@ __global__ void updatePosition(float time, bufList buf, int pnum){
 		if (buf.MFtype[i] == 0)
 		{
 			buf.mf_restdensity[i] = newdens;
-			//update rest mass xuben
-			buf.mf_restmass[i] = buf.fluidPercent[i] * simData.pmass;
+			////update rest mass xuben
+			//buf.mf_restmass[i] = buf.fluidPercent[i] * simData.pmass;
 		}
 		buf.mf_visc[i] = newvisc;
 
@@ -4480,46 +4487,79 @@ __device__ float contributeAvgPress(int i, int cell, bufList buf, int&count)
 	}
 	return sum;
 }
+__device__ float contributePorePressure(int i, int cell, bufList buf)
+{
+	float dsq, c;
+	register float d2 = simData.psimscale * simData.psimscale;
+	register float r2 = simData.r2;
+
+	float3 dist, vmr;
+	float cmterm, cmterm1;
+	//	float massj;
+	float3 pmterm, vmterm;
+	//	float q;
+	int j, mulj;
+	float aveDenij, cx, xterm;
+	float sum = 0;
+	//if (i % 100 == 0)
+	//	printf("particle %d's gridcnt is %d\n", i,buf.mgridcnt[cell]);
+	if (buf.mgridcnt[cell] == 0) return sum;
+
+	int cfirst = buf.mgridoff[cell];
+	int clast = cfirst + buf.mgridcnt[cell];
+	int index = buf.elasticID[i];
+	for (int cndx = cfirst; cndx < clast; cndx++)
+	{
+		j = buf.mgrid[cndx];
+		if (buf.MFtype[j] != 0)
+			continue;
+		dist = (buf.mpos[i] - buf.mpos[j])*simData.psimscale;		// dist in cm
+		dsq = (dist.x*dist.x + dist.y*dist.y + dist.z*dist.z);
+		if (!(dsq < r2 && dsq > 0))
+			continue;
+		dsq = sqrt(dsq);
+		if (buf.solidCount[j] == 1)
+		{
+			sum += 1 - buf.fluidPercent[j];
+			//buf.fluidPercent[i] -= buf.percentChange[j];
+			continue;
+		}
+		//sum += (1 - buf.fluidPercent[j]) / buf.solidCount[j];
+		sum += (buf.totalDis[j] - dsq) / ((buf.solidCount[j] - 1)*buf.totalDis[j])*(1 - buf.fluidPercent[j]);
+	}
+	return sum;
+}
 __global__ void ComputePorePressure(bufList buf, int pnum)
 {
 	uint i = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;	// particle index				
 	if (i >= pnum) return;
 	if (buf.misbound[i])return;
 	int gc = buf.mgcell[i];
-	float ks = simData.bulkModulus_solid;
+	/*float ks = simData.bulkModulus_solid;
 	float kw = simData.bulkModulus_fluid;
 	float alpha = 1 - simData.bulkModulus_porous / simData.bulkModulus_grains;
-	float M = ks*kw / ((alpha - simData.rest_porosity)*kw + simData.rest_porosity*ks);
-	float sumstrain;
+	float M = ks*kw / ((alpha - simData.rest_porosity)*kw + simData.rest_porosity*ks);*/
 	int nadj = (1 * simData.gridRes.z + 1)*simData.gridRes.x + 1;
 	if (gc == GRID_UNDEF) {
 		return;
 	}
 	gc -= nadj;
-	int index;
+	if (buf.MFtype[i] == 1)
+	{
+		buf.fluidPercent[i] = 0;
+		for (int c = 0; c < simData.gridAdjCnt; c++)
+		{
+			buf.fluidPercent[i] += contributePorePressure(i, gc + simData.gridAdj[c], buf);
+		}
+		//buf.fluidPercent[i] *= 0.1;
+		/*if (buf.fluidPercent[i] > 0.5&&buf.isSurface[buf.elasticID[i]])
+		printf("solid particle %d's fluid percent is %f\n", buf.elasticID[i], buf.fluidPercent[i]);
+		*/
 
-	//float speed = dot(buf.mforce[i], buf.mforce[i]);
-	//if (speed > simData.AL2) {
-	//	//accel1 *= simData.AL / sqrt(speed);
-	//	//accel2 *= simData.AL / sqrt(speed);
-	//	buf.mforce[i] *= simData.AL / sqrt(speed);
-	//}
-	//buf.maccel[i] = buf.mforce[i];
-
-	//float avePressure = 0;
-	//int count = 0;
-	//for (int c = 0; c < simData.gridAdjCnt; c++)
-	//{
-	//	avePressure += contributeAvgPress(i, gc + simData.gridAdj[c], buf, count);
-	//}
-	//avePressure *= M/count;
-	buf.pressure_water[i] = M*buf.fluidPercent[i];
-	/*if (buf.MFtype[i] == 0 && buf.fluidPercent[i] != 1&& buf.pressure_water[i]<avePressure)
-		printf("particle %d's water pressure is %f, avePressure is %f\n",
-			i, buf.pressure_water[i], avePressure);*/
-	//buf.pressure_water[index] = M*(simData.rest_porosity-buf.porosity[index] - alpha*buf.volumetricStrain[index]);
-	//if (buf.pressure_water[i] < 0)
-	//	buf.pressure_water[i] = 0;
+	}
+	buf.pressure_water[i] = simData.CoCompressibility*buf.fluidPercent[i];
+	//if (i % 10000 == 0)
+	//	printf("particle %d's pressure water is %f, M is %f\n", i, simData.CoCompressibility, M);
 
 }
 __device__ float3 contributeDarcyFlux(int i, int cell, bufList buf, int&count, float&normalize)
@@ -4633,7 +4673,7 @@ __global__ void ComputeDarcyFlux(bufList buf, int pnum)
 	
 }
 
-__global__ void AbsorbPercentCorrection(bufList buf, int pnum, float divDarcyFlux)
+__global__ void AbsorbPercentCorrection(bufList buf, int pnum)
 {
 	uint i = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;	// particle index				
 	if (i >= pnum)
@@ -4649,24 +4689,24 @@ __global__ void AbsorbPercentCorrection(bufList buf, int pnum, float divDarcyFlu
 	if (gc == GRID_UNDEF) return;						// particle out-of-range
 	gc -= nadj;
 	//fluid percent correction
-	if (buf.fluidPercent[i] < 0)
+	if (buf.fluidPercent[i] < 0.01)
 	{
 		buf.percentChange[i] += -buf.fluidPercent[i];
 		buf.fluidPercent[i] = 0;
 	}
 	if (buf.fluidPercent[i] > simData.rest_porosity) 
 	{
-		if (buf.MFtype[i] == 0&&buf.fluidPercent[i]>1) 
-		{
-			buf.percentChange[i] += buf.fluidPercent[i] - 1;
-			buf.fluidPercent[i] = 1;
-			
-		}
-		if(buf.MFtype[i]==1)
-		{
-			buf.percentChange[i] += buf.fluidPercent[i] - simData.rest_porosity;
-			buf.fluidPercent[i] = simData.rest_porosity;
-		}
+		//if (buf.MFtype[i] == 0&&buf.fluidPercent[i]>1) 
+		//{
+		//	buf.percentChange[i] += buf.fluidPercent[i] - 1;
+		//	buf.fluidPercent[i] = 1;
+		//	
+		//}
+		//if(buf.MFtype[i]==1)
+		//{
+		//	buf.percentChange[i] += buf.fluidPercent[i] - simData.rest_porosity;
+		//	buf.fluidPercent[i] = simData.rest_porosity;
+		//}
 	}
 	////fluid percent feedback
 	//if (buf.MFtype[i] == 0) 
@@ -4698,38 +4738,38 @@ __global__ void AbsorbPercentCorrection(bufList buf, int pnum, float divDarcyFlu
 	//		}
 	//	}
 	//}
-	if (buf.MFtype[i] == 1)
-	{
-		buf.percentChange[i] += divDarcyFlux;
-		if (buf.percentChange[i] > 0)
-		{
-			if (buf.percentChange[i] + buf.fluidPercent[i] < simData.rest_porosity)
-			{
-				buf.fluidPercent[i] += buf.percentChange[i];
-				buf.percentChange[i] = 0;
-			}
-			else
-			{
-				buf.percentChange[i] -= simData.rest_porosity - buf.fluidPercent[i];
-				buf.fluidPercent[i] = simData.rest_porosity;
-			}
-		}
-		else
-		{
-			if (buf.percentChange[i] + buf.fluidPercent[i] > 0)
-			{
-				buf.fluidPercent[i] += buf.percentChange[i];
-				buf.percentChange[i] = 0;
-			}
-			else
-			{
-				buf.percentChange[i] += buf.fluidPercent[i];
-				buf.fluidPercent[i] = 0;
-			}
-		}
-	}
-	if (buf.MFtype[i] == 0)
-		buf.mf_restmass[i] = buf.fluidPercent[i] * simData.pmass;
+	//if (buf.MFtype[i] == 1)
+	//{
+	//	buf.percentChange[i] += divDarcyFlux;
+	//	if (buf.percentChange[i] > 0)
+	//	{
+	//		if (buf.percentChange[i] + buf.fluidPercent[i] < simData.rest_porosity)
+	//		{
+	//			buf.fluidPercent[i] += buf.percentChange[i];
+	//			buf.percentChange[i] = 0;
+	//		}
+	//		else
+	//		{
+	//			buf.percentChange[i] -= simData.rest_porosity - buf.fluidPercent[i];
+	//			buf.fluidPercent[i] = simData.rest_porosity;
+	//		}
+	//	}
+	//	else
+	//	{
+	//		if (buf.percentChange[i] + buf.fluidPercent[i] > 0)
+	//		{
+	//			buf.fluidPercent[i] += buf.percentChange[i];
+	//			buf.percentChange[i] = 0;
+	//		}
+	//		else
+	//		{
+	//			buf.percentChange[i] += buf.fluidPercent[i];
+	//			buf.fluidPercent[i] = 0;
+	//		}
+	//	}
+	//}
+	//if (buf.MFtype[i] == 0)
+	//	buf.mf_restmass[i] = buf.fluidPercent[i] * simData.pmass;
 	//if (buf.MFtype[i] == 0 && buf.fluidPercent[i] < 0.1)
 	//	printf("fluid particle %d's fluid percent is %f\n", i, buf.fluidPercent[i]);
 	//if (buf.MFtype[i] == 1 && buf.fluidPercent[i] > simData.rest_porosity)
@@ -4761,7 +4801,7 @@ __device__ int findNearbySolid(int i, int cell, bufList buf, float&distance, flo
 		dsq2 = (dist.x*dist.x + dist.y*dist.y + dist.z*dist.z);
 		if (!(dsq2 < r2 && dsq2 > 0))
 			continue;
-		total_dist += dsq2;
+		total_dist += sqrt(dsq2);
 		solidCount += 1;
 		if (dsq2 < distance)
 		{
@@ -4786,15 +4826,18 @@ __global__ void ComputeFPCorrection(bufList buf, int pnum)
 	float distance = simData.r2;
 	buf.totalDis[i] = 0;
 	buf.solidCount[i] = 0;
-	int j=-1,t;
-	float sigma = 0.01;
+	int j = -1, t;
+	//buf.fluidPercent[i] = buf.nextFluidPercent[i];
+	float sigma = 1;
 	float step;
 	for (int c = 0; c < simData.gridAdjCnt; c++)
 	{
-		 t = findNearbySolid(i, gc + simData.gridAdj[c], buf, distance, buf.totalDis[i], buf.solidCount[i]);
-		 if (t != -1)
-			 j = t;
+		t = findNearbySolid(i, gc + simData.gridAdj[c], buf, distance, buf.totalDis[i], buf.solidCount[i]);
+		if (t != -1)
+			j = t;
 	}
+	//if (buf.fluidPercent[i] == 0)
+	//	printf("nearby solid is %d\n", buf.solidCount[i]);
 	bool isInside = false;
 	float oldFP = buf.fluidPercent[i];
 	if (buf.solidCount[i] == 0 || j == -1)
@@ -4803,7 +4846,6 @@ __global__ void ComputeFPCorrection(bufList buf, int pnum)
 		buf.percentChange[i] = step*sigma;
 		buf.fluidPercent[i] += step*sigma;
 		return;
-		//return;
 	}
 	else
 	{
@@ -4811,7 +4853,7 @@ __global__ void ComputeFPCorrection(bufList buf, int pnum)
 			isInside = true;
 	}
 
-	if (distance < 0.01*simData.r2||isInside)
+	if (distance < 0.01*simData.r2 || isInside)
 	{
 		step = -oldFP;
 	}
@@ -4820,7 +4862,7 @@ __global__ void ComputeFPCorrection(bufList buf, int pnum)
 		step = (1 - oldFP);
 	}
 	else
-		step = 1/0.8*sqrt(distance)/simData.psmoothradius - 1.0/8 - buf.fluidPercent[i];
+		step = 1 / 0.8*sqrt(distance) / simData.psmoothradius - 1.0 / 8 - buf.fluidPercent[i];
 	buf.percentChange[i] = step*sigma;
 	buf.fluidPercent[i] += step*sigma;
 	if (buf.percentChange[i] < 0)
@@ -4830,9 +4872,8 @@ __global__ void ComputeFPCorrection(bufList buf, int pnum)
 	//if (i % 1000 == 0)
 	//	printf("j=%d, distance is %f, r is %f, percentChange is %f,old fp is %f, fp is %f\n", 
 	//		j, sqrt(distance), simData.psmoothradius, buf.percentChange[i], oldFP, buf.fluidPercent[i]);
-
 }
-__device__ float3 contributePoroVelocity(int i, int cell, bufList buf, float&normalize) 
+__device__ float3 contributePoroVelocity(int i, int cell, bufList buf, float&normalize)
 {
 	float dsq, c, dsq2;
 	register float d2 = simData.psimscale * simData.psimscale;
@@ -4848,22 +4889,27 @@ __device__ float3 contributePoroVelocity(int i, int cell, bufList buf, float&nor
 	int cfirst = buf.mgridoff[cell];
 	int clast = cfirst + buf.mgridcnt[cell];
 
-	for (int cndx = cfirst; cndx < clast; cndx++) {
+	for (int cndx = cfirst; cndx < clast; cndx++)
+	{
 		j = buf.mgrid[cndx];
-#ifdef NEW_BOUND
-		if (buf.misbound[j] == 1) continue;
-#endif
 		if (buf.MFtype[j] != 1)
 			continue;
-		
+		//if (buf.isSurface[buf.elasticID[j]])
+		//	continue;
 		dist = (buf.mpos[i] - buf.mpos[j])*simData.psimscale;		// dist in cm
 		dsq2 = (dist.x*dist.x + dist.y*dist.y + dist.z*dist.z);
-		if (dsq2 > r2 || dsq2 < 0)
+		if (dsq2 > r2 || dsq2 <= 0)
 			continue;
-		c = r2 - dsq2;
-		pmterm = pow(c, 3)*simData.poly6kern;
+		dsq = sqrt(dsq2);
+		c = simData.psmoothradius - dsq;
+		pmterm = c*c*simData.spikykern;
+		//pmterm = -1;
 		//pVel += pmterm * (buf.gradPressure[j] / simData.rest_porosity*simData.pmass / simData.mf_dens[1] +buf.mveleval[j]);
-		pVel += pmterm * (buf.gradPressure[j] / simData.rest_porosity / simData.mf_dens[1] + buf.mveleval[j]);
+		//pVel += pmterm * (buf.gradPressure[j] / simData.rest_porosity / simData.mf_dens[1] + buf.mveleval[j]);
+		//if(buf.MFtype[i]==0)
+		pVel += dist*(simData.CoCompressibility*(1 - buf.fluidPercent[i]) - buf.pressure_water[j])*pmterm / dsq*buf.mf_restmass[j] * buf.mdensity[j];
+		//else
+		//	pVel += dist*(simData.CoCompressibility*(buf.fluidPercent[i]) - buf.pressure_water[j])*pmterm / dsq*buf.mf_restmass[j] * buf.mdensity[j];
 		normalize += pmterm;
 	}
 	return pVel;
@@ -4880,7 +4926,6 @@ __global__ void ComputePoroVelocity(bufList buf, int pnum)
 	uint gc = buf.mgcell[i];
 	if (gc == GRID_UNDEF) return;						// particle out-of-range
 	gc -= nadj;
-	float distance = simData.r2;
 	float normalize = 0;
 	float3 poroVel = make_float3(0, 0, 0);
 	//buf.poroForce[i] = make_float3(0, 0, 0);
@@ -4889,21 +4934,31 @@ __global__ void ComputePoroVelocity(bufList buf, int pnum)
 	{
 		poroVel += contributePoroVelocity(i, gc + simData.gridAdj[c], buf, normalize);
 	}
-	if (normalize != 0)
+	//if (normalize != 0)
 	{
-		poroVel /= normalize;
+		poroVel /= simData.rest_porosity;
+		poroVel *= simData.permeability / simData.mf_visc[1];
 		//buf.poroForce[i] = (poroVel - buf.mveleval[i]) / simData.mf_dt;
 		//buf.mforce[i] = (poroVel - buf.poroVel[i]) / simData.mf_dt;
 		/*if (buf.fluidPercent[i] != 1)
-			printf("new porovel is (%f,%f,%f), old porovel is (%f,%f,%f), fluid percent is %f\n",
-				poroVel.x, poroVel.y, poroVel.z, buf.poroVel[i].x, buf.poroVel[i].y, buf.poroVel[i].z,
-				buf.fluidPercent[i]);*/
+		printf("new porovel is (%f,%f,%f), old porovel is (%f,%f,%f), fluid percent is %f\n",
+		poroVel.x, poroVel.y, poroVel.z, buf.poroVel[i].x, buf.poroVel[i].y, buf.poroVel[i].z,
+		buf.fluidPercent[i]);*/
+
+		/*if (dot(poroVel, poroVel) != 0 && buf.MFtype[i] == 1 && buf.isSurface[buf.elasticID[i]])
+		printf("solid %d's porovel is (%f,%f,%f), fluid percent is %f, pos is (%f,%f,%f)\n",
+		buf.elasticID[i], poroVel.x, poroVel.y, poroVel.z,
+		buf.fluidPercent[i],buf.mpos[i].x, buf.mpos[i].y, buf.mpos[i].z);*/
+
 		buf.poroVel[i] = poroVel;
-		//buf.mforce[i] = (buf.poroVel[i])/simData.mf_dt;
-		/*if (i % 1000 == 0)
-			printf("particle %d's poroVel is (%f,%f,%f), fluidVel is (%f,%f,%f), fluidPercent is %f\n",
-				i, buf.poroVel[i].x, buf.poroVel[i].y, buf.poroVel[i].z,
-				buf.fluidVel[i].x, buf.fluidVel[i].y, buf.fluidVel[i].z, buf.fluidPercent[i]);*/
+		//if (i % 1000 == 0)
+		//if(i==142750)
+		if (dot(poroVel, poroVel) != 0 && i % 1000 == 0)
+			printf("particle %d's poroForce is (%f,%f,%f), fluidVel is (%f,%f,%f), fluidPercent is %f, pos is (%f,%f,%f)\n",
+				i, buf.mforce[i].x, buf.mforce[i].y, buf.mforce[i].z,
+				buf.fluidVel[i].x, buf.fluidVel[i].y, buf.fluidVel[i].z, buf.fluidPercent[i],
+				buf.mpos[i].x, buf.mpos[i].y, buf.mpos[i].z);
+		buf.mforce[i] = (poroVel - buf.poroVel[i]) / simData.mf_dt;
 		//buf.mforce[i] = (1 - buf.fluidPercent[i])*(buf.poroVel[i] - buf.mveleval[i]) / simData.mf_dt;
 	}
 	buf.percentChange[i] = 0;
@@ -5182,54 +5237,6 @@ __global__ void ComputeSPCorrection(bufList buf, int pnum)
 void ComputePorousForceCUDA()
 {
 	cudaError_t error;
-	ComputePorePressure << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
-	error = cudaGetLastError();
-	if (error != cudaSuccess) {
-		fprintf(stderr, "CUDA ERROR: compute pore pressure CUDA: %s\n", cudaGetErrorString(error));
-	}
-	cudaThreadSynchronize();
-
-	//fluid flow between fluids and solid surface
-	ComputeFluidFlux << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
-	error = cudaGetLastError();
-	if (error != cudaSuccess) {
-		fprintf(stderr, "CUDA ERROR: compute fluid flux CUDA: %s\n", cudaGetErrorString(error));
-	}
-	cudaThreadSynchronize();
-
-	ComputeFluidChange << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
-	error = cudaGetLastError();
-	if (error != cudaSuccess) {
-		fprintf(stderr, "CUDA ERROR: compute fluid flux CUDA: %s\n", cudaGetErrorString(error));
-	}
-	cudaThreadSynchronize();
-
-	ComputeFluidAdvance << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
-	error = cudaGetLastError();
-	if (error != cudaSuccess) {
-		fprintf(stderr, "CUDA ERROR: compute fluid advance CUDA: %s\n", cudaGetErrorString(error));
-	}
-	cudaThreadSynchronize();
-
-	//fluid flow in solids
-	ComputeDarcyFlux << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
-	error = cudaGetLastError();
-	if (error != cudaSuccess) {
-		fprintf(stderr, "CUDA ERROR: compute darcy flux CUDA: %s\n", cudaGetErrorString(error));
-	}
-	cudaThreadSynchronize();
-
-	ComputeSaturation << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
-	error = cudaGetLastError();
-	if (error != cudaSuccess) {
-		fprintf(stderr, "CUDA ERROR: compute Saturation CUDA: %s\n", cudaGetErrorString(error));
-	}
-	cudaThreadSynchronize();
-
-	thrust::device_ptr<float> div(fbuf.divDarcyFlux);
-	thrust::device_vector<float> divD(div, div + fcuda.pnum);
-	float sum3 = thrust::reduce(divD.begin(), divD.end());
-
 	ComputeFPCorrection << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) {
@@ -5237,14 +5244,62 @@ void ComputePorousForceCUDA()
 	}
 	cudaThreadSynchronize();
 
-	ComputeSPCorrection << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
+	ComputePorePressure << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) {
-		fprintf(stderr, "CUDA ERROR: compute solid percent change CUDA: %s\n", cudaGetErrorString(error));
+		fprintf(stderr, "CUDA ERROR: compute pore pressure CUDA: %s\n", cudaGetErrorString(error));
 	}
 	cudaThreadSynchronize();
 
-	AbsorbPercentCorrection << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum, -sum3/fcuda.numElasticPoints);
+	////fluid flow between fluids and solid surface
+	//ComputeFluidFlux << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
+	//error = cudaGetLastError();
+	//if (error != cudaSuccess) {
+	//	fprintf(stderr, "CUDA ERROR: compute fluid flux CUDA: %s\n", cudaGetErrorString(error));
+	//}
+	//cudaThreadSynchronize();
+
+	//ComputeFluidChange << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
+	//error = cudaGetLastError();
+	//if (error != cudaSuccess) {
+	//	fprintf(stderr, "CUDA ERROR: compute fluid flux CUDA: %s\n", cudaGetErrorString(error));
+	//}
+	//cudaThreadSynchronize();
+
+	//ComputeFluidAdvance << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
+	//error = cudaGetLastError();
+	//if (error != cudaSuccess) {
+	//	fprintf(stderr, "CUDA ERROR: compute fluid advance CUDA: %s\n", cudaGetErrorString(error));
+	//}
+	//cudaThreadSynchronize();
+
+	////fluid flow in solids
+	//ComputeDarcyFlux << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
+	//error = cudaGetLastError();
+	//if (error != cudaSuccess) {
+	//	fprintf(stderr, "CUDA ERROR: compute darcy flux CUDA: %s\n", cudaGetErrorString(error));
+	//}
+	//cudaThreadSynchronize();
+
+	//ComputeSaturation << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
+	//error = cudaGetLastError();
+	//if (error != cudaSuccess) {
+	//	fprintf(stderr, "CUDA ERROR: compute Saturation CUDA: %s\n", cudaGetErrorString(error));
+	//}
+	//cudaThreadSynchronize();
+
+	//thrust::device_ptr<float> div(fbuf.divDarcyFlux);
+	//thrust::device_vector<float> divD(div, div + fcuda.pnum);
+	//float sum3 = thrust::reduce(divD.begin(), divD.end());
+
+	//ComputeSPCorrection << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
+	//error = cudaGetLastError();
+	//if (error != cudaSuccess) {
+	//	fprintf(stderr, "CUDA ERROR: compute solid percent change CUDA: %s\n", cudaGetErrorString(error));
+	//}
+	//cudaThreadSynchronize();
+
+	AbsorbPercentCorrection << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) {
 		fprintf(stderr, "CUDA ERROR: compute percent correction CUDA: %s\n", cudaGetErrorString(error));
@@ -5258,15 +5313,16 @@ void ComputePorousForceCUDA()
 	}
 	cudaThreadSynchronize();
 
-	thrust::device_ptr<float> fluidPercent(fbuf.fluidPercent);
-	thrust::device_vector<float> fP(fluidPercent, fluidPercent + fcuda.pnum);
-	float sum = thrust::reduce(fP.begin(), fP.end());
+	//thrust::device_ptr<float> fluidPercent(fbuf.fluidPercent);
+	//thrust::device_vector<float> fP(fluidPercent, fluidPercent + fcuda.pnum);
+	//float sum = thrust::reduce(fP.begin(), fP.end());
 
-	thrust::device_ptr<float> percentChange(fbuf.percentChange);
-	thrust::device_vector<float> pC(percentChange, percentChange + fcuda.pnum);
-	float sum2 = thrust::reduce(pC.begin(), pC.end());
+	//thrust::device_ptr<float> percentChange(fbuf.percentChange);
+	//thrust::device_vector<float> pC(percentChange, percentChange + fcuda.pnum);
+	//float sum2 = thrust::reduce(pC.begin(), pC.end());
 
-	printf("fluid sum is %f, percent change is %f,sum of divDarcyFlux is %.10f,particle num is %d\n", sum, sum2,sum3, fcuda.pnum);
+	//printf("fluid sum is %f, percent change is %f,sum of divDarcyFlux is %.10f,particle num is %d\n", sum, sum2,sum3, fcuda.pnum);
+
 }
 
 //**************************************************************************************************
@@ -5366,6 +5422,56 @@ __global__ void ComputePressureForce(bufList buf, int pnum)
 		buf.mforce[i] = make_float3(0, 0, 0);
 	else
 		buf.mforce[i] = -buf.volume[i]/buf.mf_restmass[i]*force;
+	//if (dot(buf.mforce[i], buf.mforce[i]) > 10000)
+	//	printf("particle %d's type is %d, pressure force is (%f,%f,%f), pressure is %f\n",
+	//		i, buf.MFtype[i], buf.mforce[i].x, buf.mforce[i].y, buf.mforce[i].z,
+	//		buf.mpress[i]);
+	buf.maccel[i] = buf.mforce[i];
+	//if(isnan(dot(buf.mforce[i],buf.mforce[i])))
+	//if (dot(buf.mforce[i],buf.mforce[i])>10 && !buf.misbound[i])
+	//	printf("particle %d's type is %d, pressure force is (%.10f,%.10f,%.10f),count is %d, press is %.10f, aii is %.10f, deltadensity is %.10f, rest mass is %.10f, volume is %.10f\n",
+	//		i, buf.MFtype[i], buf.mforce[i].x, buf.mforce[i].y, buf.mforce[i].z, count, buf.mpress[i],buf.aii[i], buf.delta_density[i],buf.mf_restmass[i],buf.volume[i]);
+	//if (i % 30000 == 0)
+	//	printf("volume is %.10f, m/rho is %.10f\n", buf.volume[i], buf.mf_restmass[i] * buf.mdensity[i]);
+}
+//fluid pressure force
+__global__ void ApplyPressureForce(bufList buf, int pnum)
+{
+	uint i = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;	// particle index				
+	if (i >= pnum) return;
+	if (buf.MFtype[i] == 3)return;
+	//if (i % 30000 == 0)
+	//	printf("particle %d's type is %d,  press is %.10f\n",
+	//		i, buf.MFtype[i], buf.mpress[i]);
+	if (buf.misbound[i])
+	{
+		buf.mforce[i] = make_float3(0, 0, 0);
+		buf.maccel[i] = buf.mforce[i];
+		return;
+	}
+	if (buf.MFtype[i] == 3)return;
+	// Get search cell
+	int nadj = (1 * simData.gridRes.z + 1)*simData.gridRes.x + 1;
+	uint gc = buf.mgcell[i];
+	if (gc == GRID_UNDEF) return;						// particle out-of-range
+	gc -= nadj;
+	// Sum Pressures
+	float3 pos = buf.mpos[i];
+	//float dens = buf.mf_restdensity[i];
+	float3 force = make_float3(0, 0, 0);
+	int count = 0;
+	for (int c = 0; c < simData.gridAdjCnt; c++)
+	{
+		force += contributePressureForce(i, pos, gc + simData.gridAdj[c], buf, count);
+	}
+	//if (isnan(dot(force, force)))
+	//if(isnan(buf.volume[i])||isnan(buf.mpress[i]))
+	//	printf("particle %d's type is %d, force is nan. press is %f, volume is %.10f,fluid percent is %f\n",
+	//		i, buf.MFtype[i], buf.mpress[i], buf.volume[i], buf.fluidPercent[i]);
+	if (buf.mf_restmass[i] == 0)
+		buf.mforce[i] = make_float3(0, 0, 0);
+	else
+		buf.mforce[i] = -buf.volume[i] / buf.mf_restmass[i] * force;
 	//if (dot(buf.mforce[i], buf.mforce[i]) > 10000)
 	//	printf("particle %d's type is %d, pressure force is (%f,%f,%f), pressure is %f\n",
 	//		i, buf.MFtype[i], buf.mforce[i].x, buf.mforce[i].y, buf.mforce[i].z,
