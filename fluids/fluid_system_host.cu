@@ -81,13 +81,10 @@ void cudaInit(int argc, char **argv)
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mgndx, sizeof(uint)) );	
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mclr, sizeof(uint)) );	
 
-	checkCudaErrors ( cudaMalloc((void**)&fbuf.inter_density, sizeof(float)));
 	checkCudaErrors ( cudaMalloc((void**)&fbuf.delta_density, sizeof(float)));
-	checkCudaErrors ( cudaMalloc((void**)&fbuf.dii, sizeof(float) * 3));
 	checkCudaErrors ( cudaMalloc((void**)&fbuf.aii, sizeof(float)));
-	checkCudaErrors ( cudaMalloc((void**)&fbuf.DijPj, sizeof(float) * 3));
+
 	checkCudaErrors(cudaMalloc((void**)&fbuf.pressForce, sizeof(float) * 3));
-	checkCudaErrors ( cudaMalloc((void**)&fbuf.mpress_pre, sizeof(float)));
 
 	checkCudaErrors ( cudaMalloc((void**)&fbuf.rest_volume, sizeof(float)));
 	checkCudaErrors ( cudaMalloc((void**)&fbuf.volume, sizeof(float)));
@@ -138,8 +135,8 @@ void cudaInit(int argc, char **argv)
 	//checkCudaErrors(cudaMalloc((void**)&fbuf.Saturation, sizeof(float)));
 	//checkCudaErrors(cudaMalloc((void**)&fbuf.AbsorbedFluidVolume, sizeof(float)));
 	//checkCudaErrors(cudaMalloc((void**)&fbuf.Saturation, sizeof(float)));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.DeltaSaturation, sizeof(float)));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.elasticVolume, sizeof(float)));
+	//checkCudaErrors(cudaMalloc((void**)&fbuf.DeltaSaturation, sizeof(float)));
+	//checkCudaErrors(cudaMalloc((void**)&fbuf.elasticVolume, sizeof(float)));
 	checkCudaErrors(cudaMalloc((void**)&fbuf.gradPressure, sizeof(float3)));
 	checkCudaErrors(cudaMalloc((void**)&fbuf.poroVel, sizeof(float3)));
 	checkCudaErrors(cudaMalloc((void**)&fbuf.fluidVel, sizeof(float3)));
@@ -240,19 +237,16 @@ void FluidClearCUDA ()
 
 	//checkCudaErrors(cudaFree(fbuf.AbsorbedFluidVolume));
 	//checkCudaErrors(cudaFree(fbuf.Saturation));
-	checkCudaErrors(cudaFree(fbuf.DeltaSaturation));
-	checkCudaErrors(cudaFree(fbuf.elasticVolume));
+	//checkCudaErrors(cudaFree(fbuf.DeltaSaturation));
+	//checkCudaErrors(cudaFree(fbuf.elasticVolume));
 	checkCudaErrors(cudaFree(fbuf.gradPressure));
 	checkCudaErrors(cudaFree(fbuf.poroVel));
 	checkCudaErrors(cudaFree(fbuf.fluidVel));
 
 	//IISPH
-	checkCudaErrors(cudaFree(fbuf.dii));
 	checkCudaErrors(cudaFree(fbuf.aii));
-	checkCudaErrors(cudaFree(fbuf.DijPj));
 	checkCudaErrors(cudaFree(fbuf.pressForce));
-	checkCudaErrors(cudaFree(fbuf.mpress_pre));
-	checkCudaErrors(cudaFree(fbuf.inter_density));
+
 	checkCudaErrors(cudaFree(fbuf.delta_density));
 	//pressure boundary for IISPH
 	checkCudaErrors(cudaFree(fbuf.volume));
@@ -303,43 +297,24 @@ void FluidSetupCUDA ( int num, int gsrch, int3 res, float3 size, float3 delta, f
 	
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mpos, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float) * 3));
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.maccel,		EMIT_BUF_RATIO*fcuda.szPnts*sizeof(float)*3 ) );	
-	checkCudaErrors ( cudaMalloc ( (void**)&fbuf.vel_mid, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float) * 3));
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mveleval,	EMIT_BUF_RATIO*fcuda.szPnts*sizeof(float)*3 ) );	
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mforce,	EMIT_BUF_RATIO*fcuda.szPnts*sizeof(float)*3 ) );
-	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.poroForce, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float) * 3));
+
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mpress,	EMIT_BUF_RATIO*fcuda.szPnts*sizeof(float) ) );	
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mdensity,	EMIT_BUF_RATIO*fcuda.szPnts*sizeof(float) ) );
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mgcell,	EMIT_BUF_RATIO*fcuda.szPnts*sizeof(uint) ) );
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mgndx,		EMIT_BUF_RATIO*fcuda.szPnts*sizeof(uint)) );	
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mclr,		EMIT_BUF_RATIO*fcuda.szPnts*sizeof(uint) ) );	
-	int temp_size = EMIT_BUF_RATIO*(5 * (sizeof(float) * 3) + 2 * sizeof(float) + 3 * sizeof(uint));
+
+	int temp_size = EMIT_BUF_RATIO*(4 * (sizeof(float) * 3) + 2 * sizeof(float) + 3 * sizeof(uint));
 	//porous
-	checkCudaErrors(cudaMalloc((void**)&fbuf.pressure_water, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.gradPressure, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float3)));
 	checkCudaErrors(cudaMalloc((void**)&fbuf.poroVel, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float3)));
 	checkCudaErrors(cudaMalloc((void**)&fbuf.fluidVel, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float3)));
 
-	checkCudaErrors(cudaMalloc((void**)&fbuf.totalDis, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.solidCount, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(int)));
-
 	temp_size += EMIT_BUF_RATIO * sizeof(float) * 6;//fluid velocity & poroVel
-	//IISPH
-	checkCudaErrors(cudaMalloc((void**)&fbuf.delta_density, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.mpress_pre, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.inter_density, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.aii, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.dii, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)*3));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.DijPj, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)*3));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.pressForce, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float) * 3));
 
-	//checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mcluster,	fcuda.szPnts*sizeof(uint) ) );	
-	temp_size += EMIT_BUF_RATIO * (sizeof(float)*4+2*sizeof(float)*3);
-
-	//pressure boundary for IISPH
-	checkCudaErrors(cudaMalloc((void**)&fbuf.rest_volume, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.volume, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.source, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
-	temp_size += EMIT_BUF_RATIO * (sizeof(float) * 3);
+	
+	//temp_size += EMIT_BUF_RATIO * (sizeof(float) * 3);
 #ifdef NEW_BOUND
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.misbound, EMIT_BUF_RATIO*fcuda.szPnts*sizeof(int)) );	
 	temp_size += EMIT_BUF_RATIO*sizeof(int);
@@ -368,8 +343,6 @@ void FluidSetupCUDA ( int num, int gsrch, int3 res, float3 size, float3 delta, f
 	checkCudaErrors ( cudaMalloc ( (void**)&fbuf.elasticID,					EMIT_BUF_RATIO*fcuda.szPnts * sizeof(uint)));
 	checkCudaErrors ( cudaMalloc ( (void**)&fbuf.fluidPercent,			EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
 	checkCudaErrors ( cudaMalloc ( (void**)&fbuf.percentChange,				EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
-	//no need to sort
-	checkCudaErrors(cudaMalloc((void**)&fbuf.divDarcyFlux, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
 
 	temp_size += EMIT_BUF_RATIO*(sizeof(float)*2+sizeof(uint));
 	
@@ -381,6 +354,20 @@ void FluidSetupCUDA ( int num, int gsrch, int3 res, float3 size, float3 delta, f
 
 	//no sort values
 	checkCudaErrors ( cudaMalloc((void**)&fbuf.poroDriftVel, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float) * 3));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.vel_mid, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float) * 3));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.poroForce, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float) * 3));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.pressure_water, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.gradPressure, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float3)));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.totalDis, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.solidCount, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(int)));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.divDarcyFlux, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.aii, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.delta_density, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.pressForce, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float) * 3));
+	//pressure boundary for IISPH
+	checkCudaErrors(cudaMalloc((void**)&fbuf.rest_volume, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.volume, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.source, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
 	// Allocate grid
 	fcuda.szGrid = (fcuda.gridBlocks * fcuda.gridThreads);  
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mgrid,		EMIT_BUF_RATIO*fcuda.szPnts*sizeof(int) ) );
@@ -420,8 +407,8 @@ void ElasticSetupCUDA(int num,float miu,float lambda,float porosity,float permea
 	//checkCudaErrors(cudaMalloc((void**)&fbuf.pressure_water, fcuda.numElasticPoints * sizeof(float)));
 	//checkCudaErrors(cudaMalloc((void**)&fbuf.AbsorbedFluidVolume, fcuda.numElasticPoints * sizeof(float)));
 	//checkCudaErrors(cudaMalloc((void**)&fbuf.Saturation, fcuda.numElasticPoints * sizeof(float)));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.DeltaSaturation, fcuda.numElasticPoints * sizeof(float)));
-	checkCudaErrors(cudaMalloc((void**)&fbuf.elasticVolume, fcuda.numElasticPoints * sizeof(float)));
+	//checkCudaErrors(cudaMalloc((void**)&fbuf.DeltaSaturation, fcuda.numElasticPoints * sizeof(float)));
+	//checkCudaErrors(cudaMalloc((void**)&fbuf.elasticVolume, fcuda.numElasticPoints * sizeof(float)));
 	checkCudaErrors(cudaMalloc((void**)&fbuf.volumetricStrain, fcuda.numElasticPoints * sizeof(float)));
 
 	checkCudaErrors(cudaMalloc((void**)&fbuf.neighborID, fcuda.numElasticPoints *sizeof(uint)* maxNeighborNum));
@@ -796,7 +783,7 @@ void CountingSortFullCUDA_( uint* ggrid )
 	int n = fcuda.pnum;
 	cudaMemcpy ( fbuf.msortbuf + n*BUF_POS,		fbuf.mpos,		n*sizeof(float)*3,	cudaMemcpyDeviceToDevice );
 	cudaMemcpy ( fbuf.msortbuf + n*BUF_ACCEL,	fbuf.maccel,	n*sizeof(float)*3,	cudaMemcpyDeviceToDevice );
-	cudaMemcpy ( fbuf.msortbuf + n*BUF_MIDVEL, fbuf.vel_mid,	n*sizeof(float)*3,  cudaMemcpyDeviceToDevice);
+	//cudaMemcpy ( fbuf.msortbuf + n*BUF_MIDVEL, fbuf.vel_mid,	n*sizeof(float)*3,  cudaMemcpyDeviceToDevice);
 	cudaMemcpy ( fbuf.msortbuf + n*BUF_VELEVAL,	fbuf.mveleval,	n*sizeof(float)*3,	cudaMemcpyDeviceToDevice );
 	cudaMemcpy ( fbuf.msortbuf + n*BUF_FORCE,	fbuf.mforce,	n*sizeof(float)*3,	cudaMemcpyDeviceToDevice );
 	cudaMemcpy ( fbuf.msortbuf + n*BUF_PRESS,	fbuf.mpress,	n*sizeof(float),	cudaMemcpyDeviceToDevice );
@@ -808,17 +795,12 @@ void CountingSortFullCUDA_( uint* ggrid )
 #ifdef NEW_BOUND
 	cudaMemcpy(fbuf.msortbuf + n*BUF_ISBOUND, fbuf.misbound, n * sizeof(int), cudaMemcpyDeviceToDevice);
 #endif
-	//IISPH
-	cudaMemcpy(fbuf.msortbuf + n*BUF_PRESSPRE, fbuf.mpress_pre, n * sizeof(float), cudaMemcpyDeviceToDevice);
-	cudaMemcpy(fbuf.msortbuf + n*BUF_DII, fbuf.dii, n * sizeof(float) * 3, cudaMemcpyDeviceToDevice);
-	cudaMemcpy(fbuf.msortbuf + n*BUF_INTERDENSITY, fbuf.inter_density, n * sizeof(float), cudaMemcpyDeviceToDevice);
-	cudaMemcpy(fbuf.msortbuf + n*BUF_AII, fbuf.aii, n * sizeof(float), cudaMemcpyDeviceToDevice);
-	cudaMemcpy(fbuf.msortbuf + n*BUF_DIJPJ, fbuf.DijPj, n * sizeof(float) * 3, cudaMemcpyDeviceToDevice);
-	cudaMemcpy(fbuf.msortbuf + n*BUF_DELTADENSITY, fbuf.delta_density, n * sizeof(float), cudaMemcpyDeviceToDevice);
-	//pressure boundary for IISPH
-	cudaMemcpy(fbuf.msortbuf + n*BUF_RESTVOLUME, fbuf.rest_volume, n * sizeof(float), cudaMemcpyDeviceToDevice);
-	cudaMemcpy(fbuf.msortbuf + n*BUF_VOLUME, fbuf.volume, n * sizeof(float), cudaMemcpyDeviceToDevice);
-	cudaMemcpy(fbuf.msortbuf + n*BUF_SOURCE, fbuf.source, n * sizeof(float), cudaMemcpyDeviceToDevice);
+
+	//cudaMemcpy(fbuf.msortbuf + n*BUF_DELTADENSITY, fbuf.delta_density, n * sizeof(float), cudaMemcpyDeviceToDevice);
+	////pressure boundary for IISPH
+	//cudaMemcpy(fbuf.msortbuf + n*BUF_RESTVOLUME, fbuf.rest_volume, n * sizeof(float), cudaMemcpyDeviceToDevice);
+	//cudaMemcpy(fbuf.msortbuf + n*BUF_VOLUME, fbuf.volume, n * sizeof(float), cudaMemcpyDeviceToDevice);
+	//cudaMemcpy(fbuf.msortbuf + n*BUF_SOURCE, fbuf.source, n * sizeof(float), cudaMemcpyDeviceToDevice);
 	//porous
 	cudaMemcpy(fbuf.msortbuf + n*BUF_FVEL, fbuf.fluidVel, n * sizeof(float3), cudaMemcpyDeviceToDevice);
 	cudaMemcpy(fbuf.msortbuf + n*BUF_POROVEL, fbuf.poroVel, n * sizeof(float3), cudaMemcpyDeviceToDevice);
@@ -999,7 +981,7 @@ void PressureSolve(int fluid_beginIndex,int fluid_endIndex)
 	}
 	cudaThreadSynchronize();*/
 
-	ComputePressureForce << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
+	ApplyPressureForce << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) {
 		fprintf(stderr, "CUDA ERROR: ComputePressureForce: %s\n", cudaGetErrorString(error));
@@ -1770,7 +1752,7 @@ __global__ void CountingSortFull_ ( bufList buf, int pnum)
 		buf.mpress[ sort_ndx ] =	*(float*) (buf.msortbuf + pnum*BUF_PRESS + i*sizeof(float) );
 		buf.mdensity[ sort_ndx ] =	*(float*) (buf.msortbuf + pnum*BUF_DENS + i*sizeof(float) );
 		buf.mclr[ sort_ndx ] =		*(uint*) (buf.msortbuf + pnum*BUF_CLR+ i*sizeof(uint) );		// ((uint) 255)<<24; -- dark matter
-		buf.vel_mid[sort_ndx] =		*(float3*)(buf.msortbuf + pnum*BUF_MIDVEL + i*sizeof(float3));
+		//buf.vel_mid[sort_ndx] =		*(float3*)(buf.msortbuf + pnum*BUF_MIDVEL + i*sizeof(float3));
 #ifdef NEW_BOUND
 		buf.misbound[ sort_ndx ] =		*(int*) (buf.msortbuf + pnum*BUF_ISBOUND+ i*sizeof(int) );		// ((uint) 255)<<24; -- dark matter
 #endif
@@ -1804,22 +1786,10 @@ __global__ void CountingSortFull_ ( bufList buf, int pnum)
 
 		if(buf.MFtype[sort_ndx] == 1)
 			buf.particleID[buf.elasticID[sort_ndx]] = sort_ndx;
-		//IISPH
-		buf.mpress_pre[sort_ndx] = *(float*)(buf.msortbuf + pnum*BUF_PRESSPRE+ i * sizeof(float));
-		buf.dii[sort_ndx] = *(float3*)(buf.msortbuf + pnum*BUF_DII + i * sizeof(float)*3);
-		buf.inter_density[sort_ndx] = *(float*)(buf.msortbuf + pnum*BUF_INTERDENSITY + i * sizeof(float));
-		buf.aii[sort_ndx] = *(float*)(buf.msortbuf + pnum*BUF_AII + i * sizeof(float));
-		buf.DijPj[sort_ndx] = *(float3*)(buf.msortbuf + pnum*BUF_DIJPJ + i * sizeof(float)*3);
-		buf.delta_density[sort_ndx] = *(float*)(buf.msortbuf + pnum*BUF_DELTADENSITY + i * sizeof(float));
 		//porous
 		buf.fluidVel[sort_ndx] = *(float3*)(buf.msortbuf + pnum*BUF_FVEL + i * sizeof(float3));
 		buf.poroVel[sort_ndx] = *(float3*)(buf.msortbuf + pnum*BUF_POROVEL + i * sizeof(float3));
 
-		//pressure boundary for IISPH
-		buf.rest_volume[sort_ndx] = *(float*)(buf.msortbuf + pnum*BUF_RESTVOLUME + i * sizeof(float));
-		buf.volume[sort_ndx] = *(float*)(buf.msortbuf + pnum*BUF_VOLUME + i * sizeof(float));
-		buf.source[sort_ndx] = *(float*)(buf.msortbuf + pnum*BUF_SOURCE + i * sizeof(float));
-		//buf.density_fluid[sort_ndx] = *(float*)(buf.msortbuf + pnum*BUF_FLUIDDENSITY+ i * sizeof(float));
 	}
 }
 
@@ -2011,8 +1981,7 @@ __global__ void mfComputePressure ( bufList buf, int pnum )
 			buf.mpress[ i ] = simData.fluid_pfactor * dens * (pow( sum/dens,7.0f )-1);
 		if(buf.mpress[i]<0)
 			buf.mpress[i]=0;
-		//IISPH
-		buf.mpress_pre[i] = buf.mpress[i];
+		
 		}
 //		buf.mdensity[ i ] = 1.0f / sum;
 	}
@@ -3432,7 +3401,7 @@ __global__ void ComputeCorrectL(bufList buf,int pnum)
 		//buf.initialVolume[elasticIndex] += simData.poly6kern * pow(c, 3) * buf.mf_restmass[i] * buf.mdensity[buf.particleID[jndex]];
 	}
 	
-	buf.elasticVolume[elasticIndex] = buf.initialVolume[elasticIndex];
+	
 	//if (i % 1000 == 0)
 	//	printf("initial volume is %f\n", 1000000*buf.initialVolume[elasticIndex]);
 }
@@ -4305,145 +4274,7 @@ __global__ void ComputeSaturation(bufList buf, int pnum)
 		//	buf.mpos[i].x, buf.mpos[i].y, buf.mpos[i].z);
 	buf.fluidPercent[i] += buf.divDarcyFlux[i];
 }
-__device__ void contributeDeltaS(int i, int cell, bufList buf, float&solid_S, float&fluid_S)
-{
-	float dsq, c;
-	register float d2 = simData.psimscale * simData.psimscale;
-	register float r2 = simData.r2 / d2;
 
-	float3 dist, vmr;
-	float cmterm, cmterm1;
-	//	float massj;
-	float pmterm, vmterm;
-	//	float q;
-	int j, mulj;
-	float aveDenij, cx, xterm;
-	//if (i % 100 == 0)
-	//	printf("particle %d's gridcnt is %d\n", i,buf.mgridcnt[cell]);
-	if (buf.mgridcnt[cell] == 0) return;
-
-	int cfirst = buf.mgridoff[cell];
-	int clast = cfirst + buf.mgridcnt[cell];
-	//int index = buf.elasticID[i];
-	int jndex;
-	for (int cndx = cfirst; cndx < clast; cndx++)
-	{
-		j = buf.mgrid[cndx];
-		jndex = buf.elasticID[j];
-		dist = (buf.mpos[i] - buf.mpos[j]);		// dist in cm
-		dsq = (dist.x*dist.x + dist.y*dist.y + dist.z*dist.z);
-		if (!(dsq < r2 && dsq > 0))
-			continue;
-		//dsq = sqrt(dsq * d2);
-		c = (r2 - dsq)*d2;
-		if (buf.MFtype[j] == 1)
-		{
-			jndex = buf.elasticID[j];
-			solid_S += c*c*c*simData.poly6kern*(buf.fluidPercent[j])
-				* (buf.mf_restmass[i] / buf.mf_restdensity[i]);
-		}
-		if(buf.MFtype[j] == 0)
-			fluid_S += c*c*c*simData.poly6kern*(1-buf.fluidPercent[j])
-			* buf.mf_restmass[i] / buf.mf_restdensity[i];
-	}
-	
-}
-
-__global__ void ComputeDeltaS(bufList buf, int pnum)
-{
-	uint i = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;	// particle index				
-	if (i >= pnum) return;
-	if (buf.MFtype[i] != 1) return;
-	int gc = buf.mgcell[i];
-	int nadj = (1 * simData.gridRes.z + 1)*simData.gridRes.x + 1;
-	if (gc == GRID_UNDEF) {
-		//buf.mpos[i] = make_float3(-1000, -1000, -1000);
-		//buf.mvel[i] = make_float3(0, 0, 0);
-		return;
-	}
-	gc -= nadj;
-	int index = buf.elasticID[i];
-	float solid_S = 0, fluid_S = 0;
-	float absorbedPercent = 0;
-	if (buf.MFtype[i] == 1) 
-	{
-		for (int c = 0; c < simData.gridAdjCnt; c++)
-		{
-			contributeDeltaS(i, gc + simData.gridAdj[c], buf, solid_S, fluid_S);
-		}
-		buf.DeltaSaturation[index] = solid_S - fluid_S;
-		//if (index % 1000 == 0)
-		//	printf("elastic particle %d's delta saturation is %f\n", index, buf.DeltaSaturation[index]);
-	}
-}
-__device__ float3 contributePoroForce(int i, int cell, bufList buf)
-{
-	float dsq, c;
-	register float d2 = simData.psimscale * simData.psimscale;
-	register float r2 = simData.r2 / d2;
-
-	float3 dist, vmr;
-	float cmterm, cmterm1;
-	//	float massj;
-	float pmterm, vmterm;
-	//	float q;
-	int j, mulj;
-	float aveDenij, cx, xterm;
-	float3 sum = make_float3(0, 0, 0);
-	//if (i % 100 == 0)
-	//	printf("particle %d's gridcnt is %d\n", i,buf.mgridcnt[cell]);
-	if (buf.mgridcnt[cell] == 0) return sum;
-
-	int cfirst = buf.mgridoff[cell];
-	int clast = cfirst + buf.mgridcnt[cell];
-	//int index = buf.elasticID[i];
-	int jndex;
-	for (int cndx = cfirst; cndx < clast; cndx++)
-	{
-		j = buf.mgrid[cndx];
-		if (buf.MFtype[j] != 1)
-			continue;
-		jndex = buf.elasticID[j];
-		dist = (buf.mpos[i] - buf.mpos[j]);		// dist in cm
-		dsq = (dist.x*dist.x + dist.y*dist.y + dist.z*dist.z);
-		if (!(dsq < r2 && dsq > 0))
-			continue;
-		dist *= simData.psimscale;
-		dsq = sqrt(dsq*d2);
-		c = (simData.psmoothradius - dsq);
-		/*flux += -simData.permeability / buf.mf_visc[i] * buf.pressure_water[jndex] * c*c*simData.spikykern
-		* (buf.PoroVolume[jndex] - buf.AbsorbedFluidVolume[jndex]);*/
-		sum += c*c*simData.spikykern * dist*buf.DeltaSaturation[jndex]
-			* (buf.mf_restmass[j] / buf.mf_restdensity[j]);
-	}
-	return sum;
-}
-//__global__ void ComputePoroForce(bufList buf, int pnum)
-//{
-//	uint i = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;	// particle index				
-//	if (i >= pnum) return;
-//	if (buf.MFtype[i] != 0 && buf.MFtype[i] != 3) return;
-//	int gc = buf.mgcell[i];
-//	int nadj = (1 * simData.gridRes.z + 1)*simData.gridRes.x + 1;
-//	if (gc == GRID_UNDEF) {
-//		//buf.mpos[i] = make_float3(-1000, -1000, -1000);
-//		//buf.mvel[i] = make_float3(0, 0, 0);
-//		return;
-//	}
-//	gc -= nadj;
-//	float3 poroForce = make_float3(0.0, 0.0, 0.0), attractForce = make_float3(0, 0, 0);
-//	float pai = 3.1415;
-//	int count = 0;
-//	for (int c = 0; c < simData.gridAdjCnt; c++)
-//	{
-//		poroForce += 100*contributePoroForce(i, gc + simData.gridAdj[c], buf);
-//	}
-//	//poroForce *= buf.absorbedPercent[i];
-//	if (i % 100 == 0 && dot(poroForce,poroForce)>0)
-//		printf("particle %d's poroForce is (%f,%f,%f)\n", i, poroForce.x, poroForce.y, poroForce.z);
-//	buf.mforce[i] = poroForce * buf.absorbedPercent[i] + (1 - buf.absorbedPercent[i])*buf.mforce[i];
-//
-//}
 //__device__ void 
 __device__ float contributeAvgPress(int i, int cell, bufList buf, int&count)
 {
@@ -5397,6 +5228,7 @@ __global__ void ComputePressureForce(bufList buf, int pnum)
 	{
 		buf.mforce[i] = make_float3(0, 0, 0);
 		buf.maccel[i] = buf.mforce[i];
+		buf.pressForce[i] = make_float3(0, 0, 0);
 		return;
 	}
 	if (buf.MFtype[i] == 3)return;
@@ -5419,14 +5251,14 @@ __global__ void ComputePressureForce(bufList buf, int pnum)
 	//	printf("particle %d's type is %d, force is nan. press is %f, volume is %.10f,fluid percent is %f\n",
 	//		i, buf.MFtype[i], buf.mpress[i], buf.volume[i], buf.fluidPercent[i]);
 	if (buf.mf_restmass[i] == 0)
-		buf.mforce[i] = make_float3(0, 0, 0);
+		buf.pressForce[i] = make_float3(0, 0, 0);
 	else
-		buf.mforce[i] = -buf.volume[i]/buf.mf_restmass[i]*force;
+		buf.pressForce[i] = -buf.volume[i]/buf.mf_restmass[i]*force;
 	//if (dot(buf.mforce[i], buf.mforce[i]) > 10000)
 	//	printf("particle %d's type is %d, pressure force is (%f,%f,%f), pressure is %f\n",
 	//		i, buf.MFtype[i], buf.mforce[i].x, buf.mforce[i].y, buf.mforce[i].z,
 	//		buf.mpress[i]);
-	buf.maccel[i] = buf.mforce[i];
+	buf.maccel[i] = buf.pressForce[i];
 	//if(isnan(dot(buf.mforce[i],buf.mforce[i])))
 	//if (dot(buf.mforce[i],buf.mforce[i])>10 && !buf.misbound[i])
 	//	printf("particle %d's type is %d, pressure force is (%.10f,%.10f,%.10f),count is %d, press is %.10f, aii is %.10f, deltadensity is %.10f, rest mass is %.10f, volume is %.10f\n",
@@ -5447,6 +5279,7 @@ __global__ void ApplyPressureForce(bufList buf, int pnum)
 	{
 		buf.mforce[i] = make_float3(0, 0, 0);
 		buf.maccel[i] = buf.mforce[i];
+
 		return;
 	}
 	if (buf.MFtype[i] == 3)return;
@@ -5593,142 +5426,7 @@ __global__ void ComputeOtherForce(bufList buf, int pnum, float time)
 	i, buf.MFtype[i], buf.mforce[i].x, buf.mforce[i].y, buf.mforce[i].z,buf.dii[i].x, buf.dii[i].y, buf.dii[i].z,
 	buf.mpos[i].x, buf.mpos[i].y, buf.mpos[i].z);*/
 }
-__device__ float3 contributeDII(int i, float3 pos, int cell, bufList buf, int &count)
-{
-	float3 dii = make_float3(0, 0, 0);
-	if (buf.mgridcnt[cell] == 0)return dii;
 
-	register float d2 = simData.psimscale * simData.psimscale;
-	register float r2 = simData.r2;
-	float3 dist;
-	float c, dsq2, dsq;
-	int j;
-	float3 vmr;
-	float cmterm;
-	int cfirst = buf.mgridoff[cell];
-	int clast = cfirst + buf.mgridcnt[cell];
-	float q;
-	for (int cndx = cfirst; cndx < clast; cndx++)
-	{
-		j = buf.mgrid[cndx];
-		dist = (buf.mpos[i] - buf.mpos[j])*simData.psimscale;
-		dsq2 = dot(dist, dist);
-		dsq = sqrt(dsq2);
-		//q = dsq / simData.psmoothradius;
-
-		//cubic spline kernel
-		/*if (q >= 2||q<=0)
-			continue;
-		cmterm = buf.mf_restmass[j] * pow(buf.mdensity[i], 2);
-		if(q>1)
-			dii += cmterm*simData.gradCubicSplineKern1*pow(2 - q, 2)*dist;
-		else
-			dii += cmterm*simData.gradCubicSplineKern2*(2.25*q*q - 3 * q)*dist;*/
-		//spiky kern
-		if (dsq2 > r2 || dsq2 <= 0)
-			continue;
-		count++;
-		c = simData.psmoothradius - dsq;
-		cmterm = buf.mf_restmass[j] * pow(buf.mdensity[i], 2);
-		dii += cmterm * c*c*simData.spikykern*dist/dsq;
-	}
-	return dii;
-}
-__global__ void ComputeDII(bufList buf, int pnum)
-{
-	uint i = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;	// particle index				
-	if (i >= pnum) return;
-
-	// Get search cell
-	int nadj = (1 * simData.gridRes.z + 1)*simData.gridRes.x + 1;
-	uint gc = buf.mgcell[i];
-	if (gc == GRID_UNDEF) return;						// particle out-of-range
-	gc -= nadj;
-	bool error = false;
-	// Sum Pressures
-	float3 pos = buf.mpos[i];
-	float dens = buf.mf_restdensity[i];
-	float3 force = make_float3(0, 0, 0);
-	float3 dii = make_float3(0, 0, 0);
-	int count = 0;
-	for (int c = 0; c < simData.gridAdjCnt; c++)
-	{
-		dii += contributeDII(i, pos, gc + simData.gridAdj[c], buf, count);
-	}
-	buf.dii[i] = -dii;
-	buf.dii[i] *= pow(simData.mf_dt, 2);
-	//if (i % 3000 == 0)
-	//	printf("particle %d's dii is (%.10f,%.10f,%.10f),count is %d\n", i, buf.dii[i].x, buf.dii[i].y, buf.dii[i].z, count);
-}
-__device__ float contributeDeltaDensity(int i, float3 pos, int cell, bufList buf)
-{
-	float deltaD = 0;
-	if (buf.mgridcnt[cell] == 0)return deltaD;
-
-	register float d2 = simData.psimscale * simData.psimscale;
-	register float r2 = simData.r2;
-	float3 dist;
-	float c, dsq2, dsq;
-	int j;
-	float3 vmr;
-	float3 cmterm, vmterm;
-	int cfirst = buf.mgridoff[cell];
-	int clast = cfirst + buf.mgridcnt[cell];
-
-	float q;
-	for (int cndx = cfirst; cndx < clast; cndx++)
-	{
-		j = buf.mgrid[cndx];
-		dist = (buf.mpos[i] - buf.mpos[j])*simData.psimscale;
-		dsq2 = dot(dist, dist);
-		dsq = sqrt(dsq2);
-		q = dsq / simData.psmoothradius;
-		//cubic spline kern
-	/*	if (q >= 2 || q <= 0)
-			continue;
-		cmterm = (buf.mveleval[i] - buf.mveleval[j])*buf.mf_restmass[j]*simData.mf_dt;
-		if(q>1)
-		{
-			vmterm = dist*simData.gradCubicSplineKern1*(2 - q)*(2 - q);
-		}
-		else
-		{
-			vmterm = dist*simData.gradCubicSplineKern2*(2.25*q*q - 3 * q);
-		}
-		deltaD += dot(vmterm, cmterm);*/
-		//spiky kern
-		if (dsq2 > r2 || dsq2 <= 0)
-			continue;
-		c = simData.psmoothradius - dsq;
-		//cmterm = (buf.mveleval[i] - buf.mveleval[j])*buf.mf_restmass[j] * simData.mf_dt;
-		cmterm = (buf.vel_mid[i] - buf.vel_mid[j])*buf.mf_restmass[j] * simData.mf_dt;
-		vmterm = dist* c*c*simData.spikykern/dsq;
-		deltaD += dot(vmterm, cmterm);
-	}
-	return deltaD;
-}
-__global__ void ComputeDeltaDensity(bufList buf, int pnum)
-{
-	uint i = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;	// particle index				
-	if (i >= pnum) return;
-
-	// Get search cell
-	int nadj = (1 * simData.gridRes.z + 1)*simData.gridRes.x + 1;
-	uint gc = buf.mgcell[i];
-	if (gc == GRID_UNDEF) return;						// particle out-of-range
-	gc -= nadj;
-	bool error = false;
-	// Sum Pressures
-	float3 pos = buf.mpos[i];
-	float dens = buf.mf_restdensity[i];
-	float deltaD = 0;
-	int count = 0;
-	for (int c = 0; c < simData.gridAdjCnt; c++)
-	{
-		deltaD += contributeDeltaDensity(i, pos, gc + simData.gridAdj[c], buf);
-	}
-	buf.inter_density[i] = 1.0 / buf.mdensity[i] + deltaD;
-}
 
 //__device__ float3 contributeDijPj(int i, float3 pos, int cell, bufList buf)
 //{
@@ -5800,62 +5498,7 @@ __global__ void ComputeDeltaDensity(bufList buf, int pnum)
 //	//	printf("particle %d's dijpj is (%f,%f,%f),press is %f\n", 
 //	//		i, buf.DijPj[i].x, buf.DijPj[i].y, buf.DijPj[i].z, buf.mpress[i]);
 //}
-__device__ float contributePressureIteration(int i, float3 pos, int cell, bufList buf)
-{
-	float result = 0;
-	if (buf.mgridcnt[cell] == 0)return result;
 
-	register float d2 = simData.psimscale * simData.psimscale;
-	register float r2 = simData.r2;
-	float3 dist;
-	float c, dsq2, dsq;
-	int j;
-	float3 dij_minus;
-	float3 cmterm, vmterm;
-	int cfirst = buf.mgridoff[cell];
-	int clast = cfirst + buf.mgridcnt[cell];
-	float q;
-	for (int cndx = cfirst; cndx < clast; cndx++)
-	{
-		j = buf.mgrid[cndx];
-		dist = (buf.mpos[i] - buf.mpos[j])*simData.psimscale;
-		dsq2 = dot(dist, dist);
-		dsq = sqrt(dsq2);
-	/*	q = dsq / simData.psmoothradius;
-		if (q >= 2 || q <= 0)
-			continue;
-		dij_minus = buf.DijPj[i] - buf.dii[j] * buf.mpress[j] - buf.DijPj[j];
-		
-		vmterm = buf.mpress[i] * simData.mf_dt*simData.mf_dt*
-			buf.mf_restmass[i] * pow(buf.mdensity[i], 2)*dist;
-		if (q>1)
-		{
-			cmterm = simData.gradCubicSplineKern1*(2 - q)*(2 - q)*dist;
-			vmterm *= simData.gradCubicSplineKern1*(2 - q)*(2 - q);
-			result += buf.mf_restmass[j] * dot(dij_minus + vmterm, cmterm);
-		}
-		else
-		{
-			cmterm = simData.gradCubicSplineKern2*(2.25*q*q - 3 * q)*dist;
-			vmterm *= simData.gradCubicSplineKern2*(2.25*q*q - 3 * q);
-			result += buf.mf_restmass[j] * dot(dij_minus + vmterm, cmterm);
-		}*/
-		if (dsq2 > r2 || dsq2 <= 0)
-			continue;
-		c = simData.psmoothradius - dsq;
-		dij_minus = buf.DijPj[i] - buf.dii[j] * buf.mpress[j] - buf.DijPj[j];
-		dij_minus *= c*c*simData.spikykern / dsq*buf.mf_restmass[j];
-		result += dot(dij_minus, dist);
-
-		vmterm = buf.mpress[i] * simData.mf_dt*simData.mf_dt*
-			buf.mf_restmass[i] * pow(buf.mdensity[i], 2)*dist;
-		vmterm *= c*c*simData.spikykern/dsq;
-		result += buf.mf_restmass[j]*c*c*simData.spikykern / dsq*dot(vmterm, dist);
-		//cmterm = c*c*simData.spikykern*dist/dsq;
-		//result += buf.mf_restmass[j] * dot(dij_minus + vmterm, cmterm);
-	}
-	return result;
-}
 //__global__ void updatePress(bufList buf, int pnum)
 //{
 //	uint i = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;	// particle index				
@@ -5942,7 +5585,7 @@ __device__ float contributeCriterion(int i, int cell, bufList buf)
 		//cmterm = buf.volume[j] * (buf.mforce[i] - buf.mforce[j]);
 		//pairwise Ap
 		if (buf.volume[i] * buf.volume[j] != 0)
-			cmterm = buf.volume[i] * buf.volume[j] /(buf.volume[j]+buf.volume[i])* (buf.mforce[i] - buf.mforce[j]);
+			cmterm = buf.volume[i] * buf.volume[j] /(buf.volume[j]+buf.volume[i])* (buf.pressForce[i] - buf.pressForce[j]);
 		else
 			continue;
 		sum += dot(cmterm, dist / dsq)*c*c*simData.spikykern;
@@ -5970,45 +5613,24 @@ __global__ void ComputeCriterion(bufList buf, int pnum)
 	}
 	sum *= pow(simData.mf_dt, 2);
 	buf.delta_density[i] = buf.source[i] - sum;
-	buf.mpress_pre[i] = buf.mpress[i];
+	float p = buf.mpress[i];
 	if (abs(buf.aii[i]) != 0)
 		buf.mpress[i] = buf.mpress[i] + omega*buf.delta_density[i] / buf.aii[i];
 	//if(isnan(buf.delta_density[i]))
 	//if (i % 70000 == 0)
-	if(buf.mpress[i]>10000000||isnan(buf.mpress[i]))
-	//if(abs(buf.delta_density[i])>1)
-		printf("particle %d's type is %d, Ap is %f,source is %f, aii is %.10f,press is %f,press pre is %.10f, vel is (%f,%f,%f),volume is %.10f,rest volume is %.10f,press force is (%f,%f,%f),fluidpercent is %f\n",
-			i, buf.MFtype[i], sum, buf.source[i], buf.aii[i], buf.mpress[i], buf.mpress_pre[i], 
-			buf.vel_mid[i].x, buf.vel_mid[i].y,buf.vel_mid[i].z,
-			buf.volume[i],buf.rest_volume[i], buf.mforce[i].x, buf.mforce[i].y, buf.mforce[i].z,
-			buf.fluidPercent[i]);
+	//if(buf.mpress[i]>10000000||isnan(buf.mpress[i]))
+	////if(abs(buf.delta_density[i])>1)
+	//	printf("particle %d's type is %d, Ap is %f,source is %f, aii is %.10f,press is %f,press pre is %.10f, vel is (%f,%f,%f),volume is %.10f,rest volume is %.10f,press force is (%f,%f,%f),fluidpercent is %f\n",
+	//		i, buf.MFtype[i], sum, buf.source[i], buf.aii[i], buf.mpress[i], p, 
+	//		buf.vel_mid[i].x, buf.vel_mid[i].y,buf.vel_mid[i].z,
+	//		buf.volume[i],buf.rest_volume[i], buf.mforce[i].x, buf.mforce[i].y, buf.mforce[i].z,
+	//		buf.fluidPercent[i]);
 	if (buf.mpress[i] < 0)
 		buf.mpress[i] = 0;
 	//if (buf.mpress[i] > 1000000)
 	//	buf.mpress[i] = 1000000;
 }
-__global__ void PressCorrection(bufList buf, int pnum)
-{
-	uint i = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;	// particle index				
-	if (i >= pnum) return;
 
-	// Get search cell
-	int nadj = (1 * simData.gridRes.z + 1)*simData.gridRes.x + 1;
-	uint gc = buf.mgcell[i];
-	if (gc == GRID_UNDEF) return;						// particle out-of-range
-	gc -= nadj;
-	if (buf.mpress[i] < 0)
-		buf.mpress[i] = 0;
-	if (buf.mpress_pre[i] < 0)
-		buf.mpress_pre[i] = 0;
-	//if (buf.MFtype[i] == 0 && i % 100 == 0 && buf.delta_density[i]>1)
-	//	printf("particle %d's press is %f, delta is %f\n", 
-	//		i, buf.mpress[i], buf.delta_density[i]);
-	/*if (buf.MFtype[i] == 0 || buf.MFtype[i] == 3)
-		buf.mpress[i] *= simData.fluid_pfactor;
-	else
-		buf.mpress[i] *= simData.solid_pfactor;*/
-}
 
 //************************************************************************
 //pressure boundary for IISPH

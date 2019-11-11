@@ -104,19 +104,15 @@
 		float*	totalDis;
 		//float*  AbsorbedFluidVolume;
 		//float*  Saturation;
-		float*  DeltaSaturation;
-		float*  elasticVolume;
+		//float*  DeltaSaturation;
+		//float*  elasticVolume;
 		float3*  gradPressure;
 		float3* poroVel;
 		float3* fluidVel;
 		//IISPH
-		float3*			dii;
 		float*			aii;
-		float3*			DijPj;
 		float3*			pressForce;
-		float*			inter_density;  //intermediate density
 		float*			delta_density;
-		float*			mpress_pre;
 		//pressure boundary for IISPH
 		float*			rest_volume;
 		float*			volume;
@@ -127,8 +123,8 @@
 	// Temporary sort buffer offsets
 	#define BUF_POS			0
 	#define BUF_ACCEL		(sizeof(float3))
-	#define BUF_MIDVEL		(BUF_ACCEL + sizeof(float3))
-	#define BUF_VELEVAL		(BUF_MIDVEL + sizeof(float3))
+
+	#define BUF_VELEVAL		(BUF_ACCEL + sizeof(float3))
 	#define BUF_FORCE		(BUF_VELEVAL + sizeof(float3))
 	#define BUF_PRESS		(BUF_FORCE + sizeof(float3))
 	#define BUF_DENS		(BUF_PRESS + sizeof(float))
@@ -154,19 +150,11 @@
 	//#define BUF_ROTATION	(BUF_ELASTICID+sizeof(uint))
 	#define BUF_PERCENTCHANGE	(BUF_ELASTICID+sizeof(int))
 	#define BUF_ABSORBEDPERCENT	(BUF_PERCENTCHANGE+sizeof(float))
-	//IISPH
-	#define BUF_PRESSPRE	(BUF_ABSORBEDPERCENT+sizeof(float))
-	#define BUF_DII			(BUF_PRESSPRE+sizeof(float))
-	#define BUF_INTERDENSITY	(BUF_DII+sizeof(float)*3)
-	#define BUF_AII			(BUF_INTERDENSITY+sizeof(float))
-	#define BUF_DIJPJ		(BUF_AII+sizeof(float))
-	#define BUF_DELTADENSITY	(BUF_DIJPJ+sizeof(float)*3)
-	#define BUF_RESTVOLUME   (BUF_DELTADENSITY+sizeof(float))
-	#define BUF_VOLUME		(BUF_RESTVOLUME+sizeof(float))
-	#define BUF_SOURCE		(BUF_VOLUME+sizeof(float))
+
 	//porous
-	#define BUF_FVEL		(BUF_SOURCE+sizeof(float))
+	#define BUF_FVEL   (BUF_ABSORBEDPERCENT+sizeof(float))
 	#define BUF_POROVEL		(BUF_FVEL+sizeof(float3))
+
 	// Fluid Parameters (stored on both host and device)
 	struct FluidParams {
 		int				numThreads, numBlocks;
@@ -318,7 +306,7 @@
 	//gravity,viscosity,etc
 	__global__ void ComputeOtherForce(bufList buf, int pnum, float time);
 	__global__ void ComputeDII(bufList buf, int pnum);
-	__global__ void ComputeDeltaDensity(bufList buf, int pnum);
+
 	__global__ void ComputeAII(bufList buf, int pnum);
 	__global__ void ComputeDijPj(bufList buf, int pnum);
 	__global__ void updatePress(bufList buf, int pnum);
