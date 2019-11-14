@@ -258,7 +258,7 @@ void FluidSystem::RunSimulateMultiCUDAFull ()
 	start.SetSystemTime(ACC_NSEC);
 	
 	PressureSolve(0,NumPoints());
-	ComputePorousForceCUDA();
+	
 	ComputeElasticForceCUDA();
 
 	//º∆À„u_mk,¥Ê¥¢µΩmf_vel_phrel÷–

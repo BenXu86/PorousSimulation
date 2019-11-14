@@ -83,6 +83,7 @@
 		float3*			poroDriftVel;
 		float*			percentChange;
 		float*			divDarcyFlux;
+		float3*			SurfaceForce;
 		//elastic material
 		uint*	particleID;
 		float*	initialVolume;
@@ -102,6 +103,7 @@
 		float*  pressure_water;
 		int*	solidCount;
 		float*	totalDis;
+		
 		//float*  AbsorbedFluidVolume;
 		//float*  Saturation;
 		//float*  DeltaSaturation;
@@ -287,8 +289,9 @@
 	__global__ void ComputeAbsorbVel(bufList buf, int pnum);
 	__global__ void ComputeAbsorbPercent(bufList buf, int pnum);
 	__global__ void AbsorbPercentCorrection(bufList buf, int pnum);
-	__global__ void ComputePorousViscosity(bufList buf, int pnum);
+	__global__ void ComputeSurfaceTension(bufList buf, int pnum);
 	__global__ void ComputePoroVelocity(bufList buf, int pnum);
+
 	//new method
 	__global__ void ComputeFluidAdvance(bufList buf, int pnum);
 	__global__ void ComputeAbsorbedVolume(bufList buf, int pnum);
