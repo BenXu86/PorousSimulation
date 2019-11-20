@@ -84,6 +84,7 @@
 		float*			percentChange;
 		float*			divDarcyFlux;
 		float3*			SurfaceForce;
+		bool*			isInside;//判断是否在固体内部
 		//elastic material
 		uint*	particleID;
 		float*	initialVolume;
