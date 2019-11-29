@@ -55,7 +55,7 @@
 	void FluidParamCUDA_projectu(float v_factor, float f_factor, float s_factor,float bdamp);
 	void ParamUpdateCUDA(bool hidebound, bool hidefluid,bool hidesolid);
 	//elastic information
-	void ElasticSetupCUDA(int num,float miu,float lambda,float porosity,float permeability,int maxNeighborNum);
+	void ElasticSetupCUDA(int num,float miu,float lambda,float porosity,float* permeability,int maxNeighborNum);
 	//porous
 	void PorousParamCUDA(float bulkModulus_porous, float bulkModulus_grains, float bulkModulus_solid, float	bulkModulus_fluid);
 	//multi fluid

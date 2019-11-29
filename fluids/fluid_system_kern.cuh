@@ -58,6 +58,17 @@
 		float3*			mf_velxcor;
 		float3*			mf_alphagrad;			// MAX_FLUIDNUM * 12 bytes for each particle
 		//float*			density_fluid;
+		//multi-fluid porous
+		float*			permeability;
+		float*			mf_fluidPercent;
+		float*			density_solid;
+		float*			pressure_water;
+		int*			solidCount;
+		float*			totalDis;
+
+		float3*			gradPressure;
+		float3*			poroVel;
+		float3*			fluidVel;
 
 		int*            MFtype;					//0 means liquid,1 means deformation,2 means rigid，3 means fully absorbed liquid
 		//End multi fluid
@@ -79,9 +90,6 @@
 		uint*			midsort;
 		//End sorting
 		
-		float*			fluidPercent;
-		float3*			poroDriftVel;
-		float*			percentChange;
 		float*			divDarcyFlux;
 		float3*			SurfaceForce;
 		bool*			isInside;//判断是否在固体内部
@@ -98,20 +106,7 @@
 		uint*	isSurface;//0 means internal particles, 1 means surface particle
 		float3* normal;//固体表面的法线方向,指向外部
 		float*	volumetricStrain;
-		//porous
-		float*  density_solid;
-		float*  porosity;
-		float*  pressure_water;
-		int*	solidCount;
-		float*	totalDis;
-		
-		//float*  AbsorbedFluidVolume;
-		//float*  Saturation;
-		//float*  DeltaSaturation;
-		//float*  elasticVolume;
-		float3*  gradPressure;
-		float3* poroVel;
-		float3* fluidVel;
+
 		//IISPH
 		float*			aii;
 		float3*			pressForce;
@@ -151,12 +146,11 @@
 	//#define BUF_GRADDEFORM	(BUF_BORNID+sizeof(int))
 	#define BUF_ELASTICID	(BUF_INDICATOR+sizeof(int))
 	//#define BUF_ROTATION	(BUF_ELASTICID+sizeof(uint))
-	#define BUF_PERCENTCHANGE	(BUF_ELASTICID+sizeof(int))
-	#define BUF_ABSORBEDPERCENT	(BUF_PERCENTCHANGE+sizeof(float))
+	#define BUF_ABSORBEDPERCENT	(BUF_ELASTICID+sizeof(int))
 
 	//porous
-	#define BUF_FVEL   (BUF_ABSORBEDPERCENT+sizeof(float))
-	#define BUF_POROVEL		(BUF_FVEL+sizeof(float3))
+	#define BUF_FVEL   (BUF_ABSORBEDPERCENT+sizeof(float)*MAX_FLUIDNUM)
+	#define BUF_POROVEL		(BUF_FVEL+sizeof(float3)*MAX_FLUIDNUM)
 
 	// Fluid Parameters (stored on both host and device)
 	struct FluidParams {
@@ -190,6 +184,7 @@
 		//multi fluid parameters
 		float			mf_dens[MAX_FLUIDNUM];
 		float			mf_visc[MAX_FLUIDNUM];
+		
 		float			mf_diffusion;
 		int				mf_catnum;
 		float			mf_dt;
@@ -200,8 +195,8 @@
 		uint			mf_maxPnum;
 		float			cont,cont1,cont2;
 		int				mf_up;
-		float relax;
-		int example;
+		float			relax;
+		int				example;
 		float			by,bxmin,bxmax,bzmin,bzmax,pan_r,omega; // for example3 rotation
 		int				loadwhich;
 
@@ -214,7 +209,8 @@
 		float			miu, lambda;//parameters to compute strain&stress
 
 		//porous
-		float			rest_porosity, permeability;
+		float			rest_porosity;
+		float			mf_permeability[MAX_FLUIDNUM];
 		float			bulkModulus_porous;
 		float			bulkModulus_grains;
 		float			bulkModulus_solid;
@@ -282,20 +278,12 @@
 	__global__ void ComputeElasticColorField(bufList buf, int pnum);
 	__global__ void ComputeElasticNormal(bufList buf, int pnum);
 	//porous functions
-	
-	__global__ void ComputeGradWaterPressure(bufList buf, int pnum);
-	
-	__global__ void ComputeSaturation(bufList buf, int pnum);
-	__global__ void ComputeDeltaS(bufList buf, int pnum);
-	__global__ void ComputeAbsorbVel(bufList buf, int pnum);
-	__global__ void ComputeAbsorbPercent(bufList buf, int pnum);
 	__global__ void AbsorbPercentCorrection(bufList buf, int pnum);
 	__global__ void ComputeSurfaceTension(bufList buf, int pnum);
 	__global__ void ComputePoroVelocity(bufList buf, int pnum);
 
 	//new method
 	__global__ void ComputeFluidAdvance(bufList buf, int pnum);
-	__global__ void ComputeAbsorbedVolume(bufList buf, int pnum);
 	__global__ void ComputePorePressure(bufList buf, int pnum);
 	__global__ void ComputeDarcyFlux(bufList buf, int pnum);
 	__global__ void ComputeFluidFlux(bufList buf, int pnum);
@@ -306,15 +294,11 @@
 	__global__ void ComputePressureForce(bufList buf, int pnum);
 	__global__ void ApplyPressureForce(bufList buf, int pnum);
 	__global__ void ComputeCriterion(bufList buf, int pnum);
-	__global__ void PressCorrection(bufList buf, int pnum);
+
 	//gravity,viscosity,etc
 	__global__ void ComputeOtherForce(bufList buf, int pnum, float time);
-	__global__ void ComputeDII(bufList buf, int pnum);
-
 	__global__ void ComputeAII(bufList buf, int pnum);
-	__global__ void ComputeDijPj(bufList buf, int pnum);
-	__global__ void updatePress(bufList buf, int pnum);
-	__global__ void applyPress(bufList buf, int pnum);
+
 	//pressure boundary for iisph
 	__global__ void ComputeBRestVolume(bufList buf, int pnum);
 	__global__ void ComputeVolume(bufList buf, int pnum);

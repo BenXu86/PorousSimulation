@@ -18,6 +18,7 @@ double scaleP,scaleP3,scaledis;
 Vector3DF volumes[6],softBoundary[2],emit[2];
 Vector3DF cont,mb1,mb2;
 Vector4DF massRatio,densityRatio,viscRatio;
+Vector4DF permeabilityRatio;
 //float cont[3];
 int loadwhich;
 int example;
@@ -142,7 +143,7 @@ void FluidSystem::Setup ( bool bStart )
 	FluidClearCUDA ();
 	Sleep ( 500 );
 	FluidSetupRotationCUDA (panr, omega, loadwhich);
-	ElasticSetupCUDA(numElasticPoints, miu, lambda, porosity, permeability, maxNeighborNum);
+	ElasticSetupCUDA(numElasticPoints, miu, lambda, porosity, m_Permeability, maxNeighborNum);
 	PorousParamCUDA(bulkModulus_porous, bulkModulus_grains, bulkModulus_solid, bulkModulus_fluid);
 	//Sleep(500);
 	FluidSetupCUDA ( NumPoints(), m_GridSrch, *(int3*)& m_GridRes, *(float3*)& m_GridSize, *(float3*)& m_GridDelta, *(float3*)& m_GridMin, *(float3*)& m_GridMax, m_GridTotal, (int) m_Vec[PEMIT_RATE].x );	
@@ -217,17 +218,17 @@ void FluidSystem::OnfirstRun()
 	record(PTIME_PRESS, "Compute CorrectL CUDA", start);
 	start.SetSystemTime(ACC_NSEC);
 
-	//MfComputeDriftVelCUDA();                                          //case 1-diff
-	//record(PTIMEDRIFTVEL, "Drift Velocity CUDA", start);
-	//start.SetSystemTime(ACC_NSEC);
+	MfComputeDriftVelCUDA();                                          //case 1-diff
+	record(PTIMEDRIFTVEL, "Drift Velocity CUDA", start);
+	start.SetSystemTime(ACC_NSEC);
 
-	//MfComputeAlphaAdvanceCUDA();									//case 1
-	//record ( PTIMEALPHA, "Alpha Advance CUDA", start );
-	//start.SetSystemTime ( ACC_NSEC );
+	MfComputeAlphaAdvanceCUDA();									//case 1
+	record ( PTIMEALPHA, "Alpha Advance CUDA", start );
+	start.SetSystemTime ( ACC_NSEC );
 
-	//MfComputeCorrectionCUDA();                                        //case5
-	//record ( PTIMECORR, "Alpha Correction and Pressure CUDA", start );		
-	//start.SetSystemTime ( ACC_NSEC );
+	MfComputeCorrectionCUDA();                                        //case5
+	record ( PTIMECORR, "Alpha Correction and Pressure CUDA", start );		
+	start.SetSystemTime ( ACC_NSEC );
 
 	//ComputeForceCUDA_ProjectU(m_Time);
 
@@ -258,25 +259,22 @@ void FluidSystem::RunSimulateMultiCUDAFull ()
 	start.SetSystemTime(ACC_NSEC);
 	
 	PressureSolve(0,NumPoints());
-	ComputePorousForceCUDA();
 	ComputeElasticForceCUDA();
+	ComputePorousForceCUDA();
+	
 	//printf("\n\n\n");
 	//º∆À„u_mk,¥Ê¥¢µΩmf_vel_phrel÷–
-	//MfComputeDriftVelCUDA();                                          //case 1-diff
-	//record ( PTIMEDRIFTVEL, "Drift Velocity CUDA", start );
-	//start.SetSystemTime ( ACC_NSEC );
+	MfComputeDriftVelCUDA();                                          //case 1-diff
+	record ( PTIMEDRIFTVEL, "Drift Velocity CUDA", start );
+	start.SetSystemTime ( ACC_NSEC );
 
-	//MfComputeAlphaAdvanceCUDA();									//case 1
-	//record ( PTIMEALPHA, "Alpha Advance CUDA", start );
-	//start.SetSystemTime ( ACC_NSEC );
+	MfComputeAlphaAdvanceCUDA();									//case 1
+	record ( PTIMEALPHA, "Alpha Advance CUDA", start );
+	start.SetSystemTime ( ACC_NSEC );
 
-	//MfComputeCorrectionCUDA();                                        //case5
-	//record ( PTIMECORR, "Alpha Correction and Pressure CUDA", start );		
-	//start.SetSystemTime ( ACC_NSEC );
-
-	//ComputeForceCUDA();
-	//record ( PTIME_FORCE, "Force CUDA", start );
-	//start.SetSystemTime ( ACC_NSEC );
+	MfComputeCorrectionCUDA();                                        //case5
+	record ( PTIMECORR, "Alpha Correction and Pressure CUDA", start );		
+	start.SetSystemTime ( ACC_NSEC );
 
 	LeapFrogIntegration(m_Time);
 	record ( PTIME_ADVANCE, "Advance CUDA", start );
@@ -472,6 +470,7 @@ void FluidSystem::AllocateParticles ( int cnt )
 	float* src_restDensity = m_restDensity;
 	m_restDensity = (float*) malloc ( EMIT_BUF_RATIO*cnt*sizeof(float) );
 	if ( src_restDensity != 0x0 ) { memcpy ( m_restDensity, src_restDensity, nump *sizeof(float)); free ( src_restDensity ); }	
+
 
 	float* src_visc = m_visc;
 	m_visc = (float*) malloc ( EMIT_BUF_RATIO*cnt*sizeof(float) );
@@ -1421,7 +1420,7 @@ void FluidSystem::ParseMFXML ( std::string name, int id, bool bStart )
 	xml.assignValueV4(&massRatio,"MassRatio");
 	xml.assignValueV4(&densityRatio,"DensityRatio");
 	xml.assignValueV4(&viscRatio,"ViscRatio");
-
+	xml.assignValueV4(&permeabilityRatio, "permeabilityRatio");
 
 	loadwhich = xml.getValueI("LoadWhich");
 	upframe = xml.getValueI("Upframe");
@@ -1438,7 +1437,7 @@ void FluidSystem::ParseMFXML ( std::string name, int id, bool bStart )
 	miu = xml.getValueF("miu");
 	lambda = xml.getValueF("lambda");
 	porosity = xml.getValueF("porosity");
-	permeability = xml.getValueF("permeability");
+	m_Param[PERMEABILITY] = xml.getValueF("permeability");
 	Vector4DF v;
 	xml.assignValueV4(&v, "bulkModulus");
 	bulkModulus_porous = v.x;
@@ -1562,16 +1561,7 @@ void FluidSystem::SetupMfAddVolume ( Vector3DF min, Vector3DF max, float spacing
 				*(m_alpha+p*MAX_FLUIDNUM+cat) = 1.0f;*(m_alpha_pre+p*MAX_FLUIDNUM+cat) = 1.0f;
 				*(m_restMass+p) = m_fluidPMass[cat];
 				*(m_restDensity+p) = m_fluidDensity[cat];
-// 				if (cat == 0)
-// 				*(mClr+p) = COLORA(1,0,0,1);
-// 				else if (cat == 1)
-// 				*(mClr+p) = COLORA(0,1,0,1);
-// 				else 
-// 				*(mClr+p) = COLORA(0,0,1,1);
-				//*(m_alpha+p*MAX_FLUIDNUM+cat) = 0.5f;*(m_alpha_pre+p*MAX_FLUIDNUM+cat) = 0.5f;
-				//*(m_alpha+p*MAX_FLUIDNUM+(cat+1)%2) = 0.5f;*(m_alpha_pre+p*MAX_FLUIDNUM+(cat+1)%2) = 0.5f;
-				//*(m_restMass+p) = (m_fluidPMass[cat]*0.5+m_fluidPMass[(cat+1)%2]*0.5);
-				//*(m_restDensity+p) = (m_fluidDensity[cat]*0.5+m_fluidDensity[(cat+1)%2]*0.5);
+				
 
 				*(m_visc+p) = m_fluidVisc[cat];
 				*(MF_type+p) = 0; //which means liquid (project-u)
@@ -2253,6 +2243,9 @@ void FluidSystem::setupSPHexample()
 	m_fluidVisc[0] =  particleVisc*viscRatio.x;
 	m_fluidVisc[1] =  particleVisc*viscRatio.y;
 	m_fluidVisc[2] =  particleVisc*viscRatio.z;
+	m_Permeability[0] = m_Param[PERMEABILITY] *permeabilityRatio.x;
+	m_Permeability[1] = m_Param[PERMEABILITY] *permeabilityRatio.y;
+	m_Permeability[2] = m_Param[PERMEABILITY] *permeabilityRatio.z;
 
 	AllocateParticles ( m_Param[PNUM] );
 	AllocatePackBuf ();
@@ -2265,7 +2258,7 @@ void FluidSystem::setupSPHexample()
 	m_Vec [ PINITMIN ].Set (volumes[0].x,volumes[0].y,volumes[0].z);
 	m_Vec [ PINITMAX ].Set (volumes[1].x,volumes[1].y,volumes[1].z);
 	//SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),1);
-	numElasticPoints = SetupMfAddDeformVolume(m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0, 0, 0), 0);
+	//numElasticPoints = SetupMfAddDeformVolume(m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0, 0, 0), 0);
 	//numElasticPoints = SetupMfAddCylinder ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),0);
 	//SetupMfAddDeformVolume
 	m_Vec [ PINITMIN ].Set (volumes[2].x,volumes[2].y,volumes[2].z);
@@ -2274,7 +2267,7 @@ void FluidSystem::setupSPHexample()
 	
 	m_Vec [ PINITMIN ].Set (volumes[4].x,volumes[4].y,volumes[4].z);
 	m_Vec [ PINITMAX ].Set (volumes[5].x,volumes[5].y,volumes[5].z);
-	//SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
+	SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
 	
 	m_Vec [ PINITMIN ].Set (softBoundary[0].x, softBoundary[0].y, softBoundary[0].z);
 	m_Vec [ PINITMAX ].Set (softBoundary[1].x, softBoundary[1].y, softBoundary[1].z);

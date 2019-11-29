@@ -115,7 +115,8 @@
 	#define PBRESTDENSITY		54
 	#define PBMASS				55
 	#define PBSTIFF				56
-	
+	//POROUS
+	#define PERMEABILITY		57
 
 	// Vector params
 	#define PVOLMIN				0
@@ -361,6 +362,7 @@
 
 		float*					m_restMass;
 		float*					m_restDensity;
+
 		float*					m_visc;
 		Vector3DF*				m_velxcor; //XSPH correction
 		Vector3DF*				m_alphagrad; //size: mMaxPoints * MAX_FLUIDNUM
@@ -429,6 +431,8 @@
 		float					m_fluidDiffusion;
 		//float					m_splitVolume;
 		//float					m_mergeVolume;
+		float					m_Permeability[MAX_FLUIDNUM];
+
 
 		double vfactor, fpfactor, spfactor;
 		double bdamp;
@@ -439,7 +443,7 @@
 		int						maxNeighborNum;
 		uint*					elasticID;
 		float					miu, lambda;//parameters to compute strain&stress
-		float					porosity, permeability;
+		float					porosity;
 		float					bulkModulus_porous;
 		float					bulkModulus_grains;
 		float					bulkModulus_solid;
