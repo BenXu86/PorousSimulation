@@ -289,6 +289,7 @@
 	__global__ void ComputeFluidFlux(bufList buf, int pnum);
 	__global__ void ComputeFluidChange(bufList buf, int pnum);
 	__global__ void ComputeFPCorrection(bufList buf, int pnum);
+	__global__ void FindNearbySolid(bufList buf, int pnum);
 	__global__ void ComputeSPCorrection(bufList buf, int pnum);
 	//implicit incompressible SPH
 	__global__ void ComputePressureForce(bufList buf, int pnum);

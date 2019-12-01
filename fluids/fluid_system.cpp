@@ -260,7 +260,6 @@ void FluidSystem::RunSimulateMultiCUDAFull ()
 	
 	PressureSolve(0,NumPoints());
 	ComputeElasticForceCUDA();
-	ComputePorousForceCUDA();
 	
 	//printf("\n\n\n");
 	//º∆À„u_mk,¥Ê¥¢µΩmf_vel_phrel÷–
@@ -275,6 +274,8 @@ void FluidSystem::RunSimulateMultiCUDAFull ()
 	MfComputeCorrectionCUDA();                                        //case5
 	record ( PTIMECORR, "Alpha Correction and Pressure CUDA", start );		
 	start.SetSystemTime ( ACC_NSEC );
+
+	//ComputePorousForceCUDA();
 
 	LeapFrogIntegration(m_Time);
 	record ( PTIME_ADVANCE, "Advance CUDA", start );
