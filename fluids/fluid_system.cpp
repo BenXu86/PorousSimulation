@@ -275,7 +275,7 @@ void FluidSystem::RunSimulateMultiCUDAFull ()
 	record ( PTIMECORR, "Alpha Correction and Pressure CUDA", start );		
 	start.SetSystemTime ( ACC_NSEC );
 
-	//ComputePorousForceCUDA();
+	ComputePorousForceCUDA();
 
 	LeapFrogIntegration(m_Time);
 	record ( PTIME_ADVANCE, "Advance CUDA", start );
@@ -2259,7 +2259,7 @@ void FluidSystem::setupSPHexample()
 	m_Vec [ PINITMIN ].Set (volumes[0].x,volumes[0].y,volumes[0].z);
 	m_Vec [ PINITMAX ].Set (volumes[1].x,volumes[1].y,volumes[1].z);
 	//SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),1);
-	//numElasticPoints = SetupMfAddDeformVolume(m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0, 0, 0), 0);
+	numElasticPoints = SetupMfAddDeformVolume(m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0, 0, 0), 0);
 	//numElasticPoints = SetupMfAddCylinder ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),0);
 	//SetupMfAddDeformVolume
 	m_Vec [ PINITMIN ].Set (volumes[2].x,volumes[2].y,volumes[2].z);

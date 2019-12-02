@@ -57,6 +57,7 @@
 		float*			mf_visc;
 		float3*			mf_velxcor;
 		float3*			mf_alphagrad;			// MAX_FLUIDNUM * 12 bytes for each particle
+		float*			mf_alphachange;
 		//float*			density_fluid;
 		//multi-fluid porous
 		float*			permeability;
@@ -291,6 +292,7 @@
 	__global__ void ComputeFPCorrection(bufList buf, int pnum);
 	__global__ void FindNearbySolid(bufList buf, int pnum);
 	__global__ void ComputeSPCorrection(bufList buf, int pnum);
+	__global__ void FluidPercentAdvanceByAlpha(bufList buf, int pnum);
 	//implicit incompressible SPH
 	__global__ void ComputePressureForce(bufList buf, int pnum);
 	__global__ void ApplyPressureForce(bufList buf, int pnum);
