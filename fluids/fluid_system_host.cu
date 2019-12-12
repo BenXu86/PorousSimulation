@@ -3786,7 +3786,7 @@ __global__ void ComputeStrainAndStress(bufList buf, int pnum)
 	for (int l = 0; l < 9; ++l)
 		stress[l] = 2 * simData.miu * strain[l];
 	stress[0] += lambda * tr_strain; stress[4] += lambda * tr_strain; stress[8] += lambda * tr_strain;
-	alpha = 0.01*(1 - simData.bulkModulus_porous / simData.bulkModulus_grains) * buf.pressure_water[i*MAX_FLUIDNUM];
+	alpha = 0.02*(1 - simData.bulkModulus_porous / simData.bulkModulus_grains) * buf.pressure_water[i*MAX_FLUIDNUM];
 	//	//if (index % 1000 == 0 && alpha!=0&&alpha / (stress[0]+alpha) > 0.01)
 	//	//	printf("solid particle %d's stress is (%f,%f,%f),change is %f\n",
 	//	//		index, stress[0], stress[4], stress[8], alpha);
@@ -4219,7 +4219,7 @@ __device__ void contributePorePressure(int i, int cell, bufList buf,float* beta,
 		dsq = (dist.x*dist.x + dist.y*dist.y + dist.z*dist.z);
 		if (!(dsq < r2 && dsq > 0))
 			continue;
-		cmterm = pow((r2 - dsq), 3)*simData.poly6kern*buf.mf_restmass[j] * buf.density_solid[buf.elasticID[i]];
+		cmterm = pow((r2 - dsq), 3)*simData.poly6kern*buf.mf_restmass[j] * buf.mdensity[j] / buf.totalDis[j];
 		for (int k = 1; k < simData.mf_catnum; ++k)
 		{
 			sum += (buf.mf_beta[j*MAX_FLUIDNUM + k]) * cmterm;
@@ -4252,11 +4252,12 @@ __global__ void ComputePorePressure(bufList buf, int pnum)
 		{
 			contributePorePressure(i, gc + simData.gridAdj[c], buf, beta, fluidSum, normalize);
 		}
-		for (int k = 1; k < simData.mf_catnum; ++k)
-		{
-			buf.pressure_water[i*MAX_FLUIDNUM + k] = simData.CoCompressibility*fluidSum;
-			buf.mf_beta[i*MAX_FLUIDNUM + k] = beta[k];
-		}
+		if(normalize !=0)
+			for (int k = 1; k < simData.mf_catnum; ++k)
+			{
+				buf.pressure_water[i*MAX_FLUIDNUM + k] = simData.CoCompressibility*fluidSum;
+				buf.mf_beta[i*MAX_FLUIDNUM + k] = beta[k] ;
+			}
 		//if (buf.mf_beta[i*MAX_FLUIDNUM + 1] != 0 && buf.elasticID[i] % 100 == 0)
 		//	printf("particle %d's pore beta is %f\n", i, buf.mf_beta[i*MAX_FLUIDNUM + 1]);
 	}
@@ -4290,10 +4291,9 @@ __global__ void ComputeSolidPorePressure(bufList buf, int pnum)
 		if(normalize != 0)
 			for (int k = 1; k < simData.mf_catnum; ++k)
 			{
-				buf.pressure_water[i*MAX_FLUIDNUM + k] = simData.CoCompressibility*fluidSum / abs(normalize);
-				buf.mf_beta[i*MAX_FLUIDNUM + k] = beta[k]/abs(normalize);
+				buf.pressure_water[i*MAX_FLUIDNUM + k] = simData.CoCompressibility*fluidSum;
+				buf.mf_beta[i*MAX_FLUIDNUM + k] = beta[k];
 			}
-
 	}
 	else
 		for (int k = 1; k<simData.mf_catnum; ++k)
@@ -4374,7 +4374,8 @@ __device__ void findNearbySolid(int i, int cell, bufList buf, float&total_dist, 
 		dsq2 = (dist.x*dist.x + dist.y*dist.y + dist.z*dist.z);
 		if (!(dsq2 < r2 && dsq2 > 0))
 			continue;
-		total_dist += sqrt(dsq2);
+		total_dist += pow((r2 - dsq2), 3)*simData.poly6kern*buf.mf_restmass[i] * buf.mdensity[i];
+		//total_dist += sqrt(dsq2);
 		solidCount += 1;
 	}
 }
@@ -4485,7 +4486,6 @@ __global__ void ComputeFPCorrection(bufList buf, int pnum)
 				buf.mf_beta[i*simData.mf_catnum + k] += step;
 				buf.mf_alpha[i*simData.mf_catnum + k] -= step;
 			}
-
 		}
 		else
 			buf.isInside[i] = false;
@@ -4672,7 +4672,7 @@ __device__ void contributeFluidFlux(int i, int cell, bufList buf, float&normaliz
 		pmterm = dist / dsq*cmterm;
 		for (int k = 1; k < simData.mf_catnum; ++k)
 		{
-			buf.gradPressure[i*MAX_FLUIDNUM + k] += (buf.mf_alpha[i*MAX_FLUIDNUM+k]+buf.mf_alpha[j*MAX_FLUIDNUM+k])*(simData.CoCompressibility * simData.rest_porosity - buf.pressure_water[j*MAX_FLUIDNUM + k])*pmterm;
+			buf.gradPressure[i*MAX_FLUIDNUM + k] += (buf.mf_alpha[i*MAX_FLUIDNUM+k]+buf.mf_alpha[j*MAX_FLUIDNUM+k]+buf.mf_beta[i*MAX_FLUIDNUM + k]+ buf.mf_beta[j*MAX_FLUIDNUM + k])*(simData.CoCompressibility * simData.rest_porosity - buf.pressure_water[j*MAX_FLUIDNUM + k])*pmterm;
 		}
 
 		normalize += cmterm;
