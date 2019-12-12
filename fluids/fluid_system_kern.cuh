@@ -61,7 +61,8 @@
 		//float*			density_fluid;
 		//multi-fluid porous
 		float*			permeability;
-		float*			mf_fluidPercent;
+		float*			mf_beta;
+		float*			mf_beta_next;
 		float*			density_solid;
 		float*			pressure_water;
 		int*			solidCount;
@@ -148,9 +149,10 @@
 	#define BUF_ELASTICID	(BUF_INDICATOR+sizeof(int))
 	//#define BUF_ROTATION	(BUF_ELASTICID+sizeof(uint))
 	#define BUF_ABSORBEDPERCENT	(BUF_ELASTICID+sizeof(int))
+	#define BUF_BETANEXT	(BUF_ABSORBEDPERCENT + sizeof(float)*MAX_FLUIDNUM)
 
 	//porous
-	#define BUF_FVEL   (BUF_ABSORBEDPERCENT+sizeof(float)*MAX_FLUIDNUM)
+	#define BUF_FVEL   (BUF_BETANEXT+sizeof(float)*MAX_FLUIDNUM)
 	#define BUF_POROVEL		(BUF_FVEL+sizeof(float3)*MAX_FLUIDNUM)
 
 	// Fluid Parameters (stored on both host and device)
@@ -286,12 +288,13 @@
 	//new method
 	__global__ void ComputeFluidAdvance(bufList buf, int pnum);
 	__global__ void ComputePorePressure(bufList buf, int pnum);
+	__global__ void ComputeSolidPorePressure(bufList buf, int pnum);
 	__global__ void ComputeDarcyFlux(bufList buf, int pnum);
 	__global__ void ComputeFluidFlux(bufList buf, int pnum);
 	__global__ void ComputeFluidChange(bufList buf, int pnum);
 	__global__ void ComputeFPCorrection(bufList buf, int pnum);
 	__global__ void FindNearbySolid(bufList buf, int pnum);
-	__global__ void ComputeSPCorrection(bufList buf, int pnum);
+	__global__ void ComputeSolidDarcyFlux(bufList buf, int pnum);
 	__global__ void FluidPercentAdvanceByAlpha(bufList buf, int pnum);
 	//implicit incompressible SPH
 	__global__ void ComputePressureForce(bufList buf, int pnum);
