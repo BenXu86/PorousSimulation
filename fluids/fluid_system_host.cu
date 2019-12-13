@@ -75,6 +75,7 @@ void cudaInit(int argc, char **argv)
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mveleval, sizeof(float)*3) );	
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mforce, sizeof(float)*3) );	
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.poroForce, sizeof(float) * 3));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.fluidForce, sizeof(float) * 3));
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mpress, sizeof(float) ) );	
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mdensity, sizeof(float) ) );	
 	checkCudaErrors ( cudaMalloc ( (void**) &fbuf.mgcell, sizeof(uint)) );	
@@ -174,6 +175,7 @@ void FluidClearCUDA ()
 	checkCudaErrors ( cudaFree ( fbuf.mveleval ) );	
 	checkCudaErrors ( cudaFree ( fbuf.mforce ) );	
 	checkCudaErrors ( cudaFree ( fbuf.poroForce));
+	checkCudaErrors(cudaFree(fbuf.fluidForce));
 	checkCudaErrors ( cudaFree ( fbuf.mpress ) );	
 	checkCudaErrors ( cudaFree ( fbuf.mdensity ) );		
 	checkCudaErrors ( cudaFree ( fbuf.mgcell ) );	
@@ -361,6 +363,8 @@ void FluidSetupCUDA ( int num, int gsrch, int3 res, float3 size, float3 delta, f
 	//checkCudaErrors ( cudaMalloc((void**)&fbuf.poroDriftVel, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float) * 3));
 	checkCudaErrors(cudaMalloc((void**)&fbuf.vel_mid, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float) * 3));
 	checkCudaErrors(cudaMalloc((void**)&fbuf.poroForce, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float) * 3));
+	checkCudaErrors(cudaMalloc((void**)&fbuf.fluidForce, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float) * 3));
+
 	checkCudaErrors(cudaMalloc((void**)&fbuf.pressure_water, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
 	checkCudaErrors(cudaMalloc((void**)&fbuf.gradPressure, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float3)*MAX_FLUIDNUM));
 	checkCudaErrors(cudaMalloc((void**)&fbuf.totalDis, EMIT_BUF_RATIO*fcuda.szPnts * sizeof(float)));
@@ -2370,7 +2374,6 @@ __global__ void mfComputeCorrection( bufList buf, int pnum )
 
 		for(uint fcount = 1; fcount < simData.mf_catnum; fcount++)
 		{
-
 			buf.mf_alpha[muloffseti + fcount] = (flag)*buf.mf_alpha[muloffseti + fcount]*sum + (1 - flag)*(fcount == maxcat ? 1 : 0);
 			buf.mf_beta[muloffseti + fcount] = (flag)*buf.mf_beta[muloffseti + fcount] * sum + (1 - flag)*(fcount == maxcat-MAX_FLUIDNUM ? 1 : 0);
 
@@ -3084,7 +3087,7 @@ __global__ void updatePosition(float time, bufList buf, int pnum){
 			float FP = buf.mf_beta[i*MAX_FLUIDNUM+1]+ buf.mf_beta[i*MAX_FLUIDNUM + 2];
 	/*		for(int k=0;k<MAX_FLUIDNUM;++k)
 				FP += buf.mf_fluidPercent[i*MAX_FLUIDNUM + k];*/
-			buf.mclr[i] = COLORA(1/(1+10*FP), 1 /(1+10*FP), 0, !simData.HideSolid);
+			buf.mclr[i] = COLORA(1/(1+5*FP), 1 /(1+5*FP), 0, !simData.HideSolid);
 			//buf.mclr[i] = COLORA((simData.rest_porosity - buf.fluidPercent[i]) / simData.rest_porosity, (simData.rest_porosity - buf.fluidPercent[i]) / simData.rest_porosity, 0, !simData.HideSolid&&buf.isSurface[index]);
 			//buf.mclr[i] = COLORA(1, 1, 0, buf.fluidPercent[i] / simData.rest_porosity);
 			//buf.mclr[i] = COLORA(buf.pressure_water[index]/50, buf.pressure_water[index] / 50, 0, 0.6);
@@ -3154,19 +3157,41 @@ __global__ void updateVelocity(float time, bufList buf, int pnum)
 	if (isnan(dot(accel, accel)))
 		printf("particle %d's type is %d, accel is nan\n",
 			i, buf.MFtype[i]);
-
+	//if (buf.MFtype[i] == 0 && i % 10000 == 0)
+	//	printf("particle %d's mixture vel is (%f,%f,%f), fluid vel is (%f,%f,%f)\n",
+	//		i, buf.mveleval[i].x, buf.mveleval[i].y, buf.mveleval[i].z,
+	//		buf.fluidVel[i*MAX_FLUIDNUM + 1].x, buf.fluidVel[i*MAX_FLUIDNUM + 1].y,
+	//		buf.fluidVel[i*MAX_FLUIDNUM + 1].z);
 	speed = accel.x*accel.x + accel.y*accel.y + accel.z*accel.z;
 	if (speed > simData.AL2) {
 		accel *= simData.AL / sqrt(speed);
+		buf.fluidForce[i] *= simData.AL / sqrt(speed);
+		buf.poroForce[i] *= simData.AL / sqrt(speed);
 	}
 
-	//accel += (2-buf.fluidPercent[i])*simData.pgravity;
 	accel += simData.pgravity;
+	//buf.fluidForce[i] += simData.pgravity;
+	//buf.poroForce[i] += simData.pgravity;
 	if (buf.misbound[i] != 1)
 	{
 		buf.mveleval[i] = buf.mveleval[i] + simData.mf_dt*accel;
 		
-		//if( buf.MFtype[i]==0)
+		//if (buf.MFtype[i] == 0)
+		//{
+
+		//	for (int k = 1; k < simData.mf_catnum; ++k)
+		//	{
+		//		buf.fluidVel[i*MAX_FLUIDNUM + k] += simData.mf_dt*buf.fluidForce[i];
+		//		//buf.poroVel[i*MAX_FLUIDNUM + k] += simData.mf_dt*buf.poroForce[i];
+		//	}
+		//	/*if (buf.mf_beta[i*MAX_FLUIDNUM + 1] == 1)
+		//		printf("particle %d's mvel is (%f,%f,%f), poroVel is (%f,%f,%f),fluid vel is (%f,%f,%f),alpha is %f\n",
+		//			i, buf.mveleval[i].x, buf.mveleval[i].y, buf.mveleval[i].z,
+		//			buf.poroVel[i*MAX_FLUIDNUM + 1].x, buf.poroVel[i*MAX_FLUIDNUM + 1].y,
+		//			buf.poroVel[i*MAX_FLUIDNUM + 1].z, buf.fluidVel[i*MAX_FLUIDNUM + 1].x,
+		//			buf.fluidVel[i*MAX_FLUIDNUM + 1].y, buf.fluidVel[i*MAX_FLUIDNUM + 1].z,
+		//			buf.mf_alpha[i*MAX_FLUIDNUM+1]);*/
+		//}
 		{
 			//buf.mveleval[i] += (1-buf.fluidPercent[i])*simData.mf_dt*buf.poroForce[i];
 			float vm = dot(buf.mveleval[i], buf.mveleval[i]);// .x*buf.mveleval[i].x + buf.mveleval[i].y*buf.mveleval[i].y + buf.mveleval[i].z*buf.mveleval[i].z;
@@ -3174,29 +3199,34 @@ __global__ void updateVelocity(float time, bufList buf, int pnum)
 			if (vm > 1.3)
 			{
 				buf.mveleval[i] *= 1.3 / vm;
+			/*	for (int k = 1; k < simData.mf_catnum; ++k)
+				{
+					buf.fluidVel[i*MAX_FLUIDNUM + k] *= 1.3 / vm;
+					buf.poroVel[i*MAX_FLUIDNUM + k] *= 1.3 / vm;
+				}*/
 			}
 		}
 
-		if (buf.MFtype[i] == 0)
-		{
-			float3 sumVel[MAX_FLUIDNUM];
-			for(int k=1;k<simData.mf_catnum;++k)
-			{
-				sumVel[k] = make_float3(0, 0, 0);
-				
-				for (int l = 1; l < simData.mf_catnum; ++l)
-					if (k != l)
-						sumVel[k] += simData.mf_dens[l] * (buf.mf_alpha[l] * buf.fluidVel[i*MAX_FLUIDNUM + l] + buf.mf_beta[i*MAX_FLUIDNUM + l] * buf.poroVel[i*MAX_FLUIDNUM + l]);
-				sumVel[k] += simData.mf_dens[k] * buf.mf_beta[i*MAX_FLUIDNUM + k] * buf.poroVel[i*MAX_FLUIDNUM + k];
-			}
-			for (int k = 1; k < simData.mf_catnum; ++k)
-			{
-				if (buf.mf_alpha[i*MAX_FLUIDNUM + k] > 0.001)
-					buf.fluidVel[i*MAX_FLUIDNUM + k] = (buf.mf_restdensity[i] * buf.mveleval[i] - sumVel[k]) / (simData.mf_dens[k]* buf.mf_alpha[i*MAX_FLUIDNUM + k]);
-				else
-					buf.fluidVel[i*MAX_FLUIDNUM + k] = make_float3(0, 0, 0);
-			}
-		}
+		//if (buf.MFtype[i] == 0)
+		//{
+			//float3 sumVel[MAX_FLUIDNUM];
+			//for(int k=1;k<simData.mf_catnum;++k)
+			//{
+			//	sumVel[k] = make_float3(0, 0, 0);
+			//	
+			//	for (int l = 1; l < simData.mf_catnum; ++l)
+			//		if (k != l)
+			//			sumVel[k] += simData.mf_dens[l] * (buf.mf_alpha[l] * buf.fluidVel[i*MAX_FLUIDNUM + l] + buf.mf_beta[i*MAX_FLUIDNUM + l] * buf.poroVel[i*MAX_FLUIDNUM + l]);
+			//	sumVel[k] += simData.mf_dens[k] * buf.mf_beta[i*MAX_FLUIDNUM + k] * buf.poroVel[i*MAX_FLUIDNUM + k];
+			//}
+			//for (int k = 1; k < simData.mf_catnum; ++k)
+			//{
+			//	if (buf.mf_alpha[i*MAX_FLUIDNUM + k] > 0.001)
+			//		buf.fluidVel[i*MAX_FLUIDNUM + k] = (buf.mf_restdensity[i] * buf.mveleval[i] - sumVel[k]) / (simData.mf_dens[k]* buf.mf_alpha[i*MAX_FLUIDNUM + k]);
+			//	else
+			//		buf.fluidVel[i*MAX_FLUIDNUM + k] = make_float3(0, 0, 0);
+			//}
+		//}
 	}
 	else if (buf.misbound[i] == 1)
 	{
@@ -3237,6 +3267,7 @@ __global__ void computeMidVel(bufList buf, int pnum)
 		accel *= simData.AL / sqrt(speed);
 	}
 	buf.mforce[i] = accel;
+	buf.fluidForce[i] = accel;
 	if (buf.misbound[i] != 1)
 	{
 		buf.vel_mid[i] = buf.mveleval[i] + simData.mf_dt*accel;
@@ -4602,22 +4633,32 @@ __global__ void ComputePoroVelocity(bufList buf, int pnum)
 			sumVel = make_float3(0, 0, 0);
 			poroVel[k] /= abs(normalize);
 			
-			for (int l = 1; l < simData.mf_catnum; ++l)
+			/*for (int l = 1; l < simData.mf_catnum; ++l)
 				if(l!=k)
 					sumVel += simData.mf_dens[l]*
 						(buf.mf_alpha[i*MAX_FLUIDNUM + l] * buf.fluidVel[i*MAX_FLUIDNUM + l]+buf.mf_beta[i*MAX_FLUIDNUM + l]*buf.poroVel[i*MAX_FLUIDNUM + l]);
 			sumVel += buf.mf_alpha[i*MAX_FLUIDNUM + k] * simData.mf_dens[k] * buf.fluidVel[i*MAX_FLUIDNUM + k];
-			if (buf.mf_beta[i*MAX_FLUIDNUM + k] > 0.001)
+			if (buf.mf_beta[i*MAX_FLUIDNUM + k] > 0.01)
 				actualVel[k] = (buf.mf_restdensity[i] * buf.mveleval[i] - sumVel) / (simData.mf_dens[k]* buf.mf_beta[i*MAX_FLUIDNUM + k]);
 			else
-				actualVel[k] = make_float3(0, 0, 0);
-			force = buf.mf_beta[i*MAX_FLUIDNUM + k]*(poroVel[k] - actualVel[k])/simData.mf_dt;
+				actualVel[k] = make_float3(0, 0, 0);*/
+			force = buf.mf_beta[i*MAX_FLUIDNUM + k]*(poroVel[k] - buf.mveleval[i])/simData.mf_dt;
 
 			buf.mforce[i] += force;
-			
+			buf.poroForce[i] += force;
+			/*if (dot(force,force)>10000)
+				printf("particle %d's phase %d's force is (%f,%f,%f),beta is (%f,%f), alpha is (%f,%f),actualVel is (%f,%f,%f),poroVel is (%f,%f,%f) (%f,%f,%f),fluid velocity is (%f,%f,%f) (%f,%f,%f)\n",
+					i, k, force.x, force.y, force.z, buf.mf_beta[i*MAX_FLUIDNUM+1], buf.mf_beta[i*MAX_FLUIDNUM + 2],
+					buf.mf_alpha[i*MAX_FLUIDNUM+1], buf.mf_alpha[i*MAX_FLUIDNUM + 2],
+					actualVel[k].x, actualVel[k].y, actualVel[k].z,
+					buf.poroVel[i*MAX_FLUIDNUM + 1].x, buf.poroVel[i*MAX_FLUIDNUM + 1].y, buf.poroVel[i*MAX_FLUIDNUM + 1].z,
+					buf.poroVel[i*MAX_FLUIDNUM + 2].x, buf.poroVel[i*MAX_FLUIDNUM + 2].y, buf.poroVel[i*MAX_FLUIDNUM + 2].z,
+					buf.fluidVel[i*MAX_FLUIDNUM + 1].x, buf.fluidVel[i*MAX_FLUIDNUM + 1].y, buf.fluidVel[i*MAX_FLUIDNUM + 1].z,
+					buf.fluidVel[i*MAX_FLUIDNUM + 2].x, buf.fluidVel[i*MAX_FLUIDNUM + 2].y, buf.fluidVel[i*MAX_FLUIDNUM + 2].z);
+			*/
 		}
-		for (int k = 1; k < simData.mf_catnum; ++k)
-			buf.poroVel[i*MAX_FLUIDNUM + k] = poroVel[k];
+		/*for (int k = 1; k < simData.mf_catnum; ++k)
+			buf.poroVel[i*MAX_FLUIDNUM + k] = poroVel[k];*/
 	}
 	else
 	{
@@ -4836,12 +4877,8 @@ __global__ void ComputeFluidChange(bufList buf, int pnum)
 	if (i >= pnum) return;
 	for (int k = 0; k<simData.mf_catnum; ++k)
 		buf.divDarcyFlux[i*MAX_FLUIDNUM + k] = 0;
-	if (buf.misbound[i])
-	{
-		for(int k=0;k<simData.mf_catnum;++k)
-			buf.mf_beta[i*MAX_FLUIDNUM+k] = 0;
+	if (buf.MFtype[i] != 0)
 		return;
-	}
 	if (buf.MFtype[i] == 0 && buf.isInside[i])
 		return;
 	
@@ -4859,9 +4896,32 @@ __global__ void ComputeFluidChange(bufList buf, int pnum)
 	for (int k = 1; k < simData.mf_catnum; ++k) 
 	{
 		buf.divDarcyFlux[i*MAX_FLUIDNUM+k] *= simData.mf_dt/abs(normalize);
-		/*if (abs(buf.divDarcyFlux[i*MAX_FLUIDNUM + k]) > 0&&i%1000==0)
-			printf("particle %d's phase %d's fluid percent change is %f\n",
-				i, k, buf.divDarcyFlux[i*MAX_FLUIDNUM + k]);*/
+		if (buf.mf_beta[i*MAX_FLUIDNUM + k] == 0)
+			buf.poroVel[i*MAX_FLUIDNUM + k] = make_float3(0, 0, 0);
+		//if (buf.mf_alpha[i*MAX_FLUIDNUM + k] == 0)
+		//	buf.fluidVel[i*MAX_FLUIDNUM + k] = make_float3(0, 0, 0);
+
+		if (buf.divDarcyFlux[i*MAX_FLUIDNUM + k] > 0)
+		{
+			if (buf.mf_alpha[i*MAX_FLUIDNUM + k] - buf.divDarcyFlux[i*MAX_FLUIDNUM + k] < 0.001)
+			{
+				buf.divDarcyFlux[i*MAX_FLUIDNUM + k] = buf.mf_alpha[i*MAX_FLUIDNUM + k];
+			}
+			/*buf.poroVel[i*MAX_FLUIDNUM + k] =
+				(buf.mf_beta[i*MAX_FLUIDNUM + k] * buf.poroVel[i*MAX_FLUIDNUM + k] + buf.divDarcyFlux[i*MAX_FLUIDNUM + k] * buf.fluidVel[i*MAX_FLUIDNUM + k])
+				/ (buf.mf_beta[i*MAX_FLUIDNUM + k] + buf.divDarcyFlux[i*MAX_FLUIDNUM + k]);
+*/
+		
+		}
+		if (buf.divDarcyFlux[i*MAX_FLUIDNUM + k] < 0)
+		{
+			if (buf.mf_beta[i*MAX_FLUIDNUM + k] + buf.divDarcyFlux[i*MAX_FLUIDNUM + k] < 0.001)
+				buf.divDarcyFlux[i*MAX_FLUIDNUM + k] = -buf.mf_beta[i*MAX_FLUIDNUM + k];
+			/*buf.fluidVel[i*MAX_FLUIDNUM + k] =
+				(-buf.divDarcyFlux[i*MAX_FLUIDNUM + k] * buf.poroVel[i*MAX_FLUIDNUM + k] + buf.mf_alpha[i*MAX_FLUIDNUM + k] * buf.fluidVel[i*MAX_FLUIDNUM + k])
+				/ (buf.fluidVel[i*MAX_FLUIDNUM + k] + buf.divDarcyFlux[i*MAX_FLUIDNUM + k]);
+		*/
+		}
 		buf.mf_beta[i*MAX_FLUIDNUM + k] += buf.divDarcyFlux[i*MAX_FLUIDNUM + k];
 		buf.mf_alpha[i*MAX_FLUIDNUM + k] -= buf.divDarcyFlux[i*MAX_FLUIDNUM + k];
 
@@ -4930,7 +4990,7 @@ __global__ void ComputeFluidAdvance(bufList buf, int pnum)
 	for (int k = 1; k < simData.mf_catnum; ++k) 
 	{
 		betachange[k] = sigma*simData.mf_dt*(-DivVelocity[k] + dot(buf.mveleval[i], gradBeta[k]));
-		if (abs(betachange[k]) > 0.5)
+		if (abs(betachange[k]) >= 0.0001)
 			printf("error! particle %d's beta change is (%f,%f)\n",
 				i, betachange[1], betachange[2]);
 		//betachange limit
@@ -5009,7 +5069,7 @@ __global__ void ComputeSurfaceTension(bufList buf, int pnum)
 	{
 		//normal /= abs(normalize);
 		buf.mforce[i] += (buf.mf_beta[i*MAX_FLUIDNUM+1]+ buf.mf_beta[i*MAX_FLUIDNUM + 2])*normal;
-		buf.SurfaceForce[i] = normal;
+		buf.poroForce[i] += (buf.mf_beta[i*MAX_FLUIDNUM + 1] + buf.mf_beta[i*MAX_FLUIDNUM + 2])*normal;
 		buf.maccel[i] = buf.mforce[i];
 
 	}
@@ -5252,7 +5312,7 @@ __global__ void ApplyPressureForce(bufList buf, int pnum)
 	//else
 	buf.pressForce[i] = -buf.volume[i] / buf.mf_restmass[i] * force;
 	buf.mforce[i] += -buf.volume[i] / buf.mf_restmass[i] * force;
-
+	buf.fluidForce[i] += -buf.volume[i] / buf.mf_restmass[i] * force;
 	//if (dot(buf.mforce[i], buf.mforce[i]) > 10000)
 	//	printf("particle %d's type is %d, pressure force is (%f,%f,%f), pressure is %f\n",
 	//		i, buf.MFtype[i], buf.mforce[i].x, buf.mforce[i].y, buf.mforce[i].z,
@@ -5312,7 +5372,11 @@ __device__ float3 contributeViscosity(int i, int muli, float idens, float3 pos, 
 			{
 				float fluidsum = 0;
 				for (int k = 1; k < simData.mf_catnum; ++k)
-					fluidsum += buf.mf_alpha[j*MAX_FLUIDNUM + k];
+				{
+					if(buf.mf_alpha[j*MAX_FLUIDNUM + k]+ buf.mf_alpha[i*MAX_FLUIDNUM + k]!=0)
+					fluidsum += buf.mf_alpha[j*MAX_FLUIDNUM + k]* buf.mf_alpha[i*MAX_FLUIDNUM + k]
+						/(buf.mf_alpha[j*MAX_FLUIDNUM + k]+ buf.mf_alpha[i*MAX_FLUIDNUM + k]);
+				}
 				force += fluidsum * vmterm * vmr;
 				//force += vmterm * vmr;
 			}
@@ -5366,6 +5430,7 @@ __global__ void ComputeOtherForce(bufList buf, int pnum, float time)
 	//bound force and gravity
 	//buf.mforce[i] += getBoundForce(i, buf, force, time);
 	buf.mforce[i] = force;
+	buf.fluidForce[i] = force;
 	buf.maccel[i] = buf.mforce[i];
 	/*if (buf.MFtype[i] == 0)
 	{

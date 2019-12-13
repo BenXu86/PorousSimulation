@@ -39,6 +39,7 @@
 		float3*			mveleval;		//mixture velocity u_m
 		float3*			mforce;			//fluid&solid force
 		float3*			poroForce;		//poro force
+		float3*			fluidForce;		//fluid force
 		float*			mpress;
 		float*			mdensity;		//周围rest_mass求和的倒数
 		uint*			mgcell;

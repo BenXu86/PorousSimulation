@@ -274,9 +274,9 @@ void FluidSystem::RunSimulateMultiCUDAFull ()
 
 	ComputeElasticForceCUDA();
 
-	MfComputeCorrectionCUDA();                                        //case5
-	record(PTIMECORR, "Alpha Correction and Pressure CUDA", start);
-	start.SetSystemTime(ACC_NSEC);
+	//MfComputeCorrectionCUDA();                                        //case5
+	//record(PTIMECORR, "Alpha Correction and Pressure CUDA", start);
+	//start.SetSystemTime(ACC_NSEC);
 
 	LeapFrogIntegration(m_Time);
 	record ( PTIME_ADVANCE, "Advance CUDA", start );
@@ -2269,7 +2269,7 @@ void FluidSystem::setupSPHexample()
 	
 	m_Vec [ PINITMIN ].Set (volumes[4].x,volumes[4].y,volumes[4].z);
 	m_Vec [ PINITMAX ].Set (volumes[5].x,volumes[5].y,volumes[5].z);
-	//SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
+	SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
 	
 	m_Vec [ PINITMIN ].Set (softBoundary[0].x, softBoundary[0].y, softBoundary[0].z);
 	m_Vec [ PINITMAX ].Set (softBoundary[1].x, softBoundary[1].y, softBoundary[1].z);
