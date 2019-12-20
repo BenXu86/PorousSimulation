@@ -429,13 +429,13 @@ void ElasticSetupCUDA(int num,float miu,float lambda,float porosity,float* perme
 	cudaThreadSynchronize();
 
 }
-void PorousParamCUDA(float bulkModulus_porous, float bulkModulus_grains, float bulkModulus_solid, float	bulkModulus_fluid)
+void PorousParamCUDA(float bulkModulus_porous, float bulkModulus_grains, float bulkModulus_solid, float	bulkModulus_fluid, float poroDeformStrength)
 {
 	fcuda.bulkModulus_porous = bulkModulus_porous;
 	fcuda.bulkModulus_grains = bulkModulus_grains;
 	fcuda.bulkModulus_solid = bulkModulus_solid;
 	fcuda.bulkModulus_fluid = bulkModulus_fluid;
-
+	fcuda.poroDeformStrength = poroDeformStrength;
 	float alpha = 1 - bulkModulus_porous / bulkModulus_grains;
 	fcuda.CoCompressibility = bulkModulus_solid*bulkModulus_fluid / ((alpha - fcuda.rest_porosity)*bulkModulus_fluid + fcuda.rest_porosity*bulkModulus_solid);
 	printf("CoCompressibility is %f\n", fcuda.CoCompressibility);
@@ -3817,7 +3817,7 @@ __global__ void ComputeStrainAndStress(bufList buf, int pnum)
 	for (int l = 0; l < 9; ++l)
 		stress[l] = 2 * simData.miu * strain[l];
 	stress[0] += lambda * tr_strain; stress[4] += lambda * tr_strain; stress[8] += lambda * tr_strain;
-	alpha = 0.02*(1 - simData.bulkModulus_porous / simData.bulkModulus_grains) * buf.pressure_water[i*MAX_FLUIDNUM];
+	alpha = simData.poroDeformStrength*(1 - simData.bulkModulus_porous / simData.bulkModulus_grains) * buf.pressure_water[i*MAX_FLUIDNUM];
 	//	//if (index % 1000 == 0 && alpha!=0&&alpha / (stress[0]+alpha) > 0.01)
 	//	//	printf("solid particle %d's stress is (%f,%f,%f),change is %f\n",
 	//	//		index, stress[0], stress[4], stress[8], alpha);
@@ -4313,14 +4313,14 @@ __global__ void ComputeSolidPorePressure(bufList buf, int pnum)
 		float fluidSum = 0;
 		float beta[MAX_FLUIDNUM];
 		float normalize = 0;
-		for (int k = 1; k < simData.mf_catnum; ++k)
+		for (int k = 0; k < simData.mf_catnum; ++k)
 			beta[k] = 0;
 		for (int c = 0; c < simData.gridAdjCnt; c++)
 		{
 			contributePorePressure(i, gc + simData.gridAdj[c], buf,  beta, fluidSum, normalize);
 		}
 		if(normalize != 0)
-			for (int k = 1; k < simData.mf_catnum; ++k)
+			for (int k = 0; k < simData.mf_catnum; ++k)
 			{
 				buf.pressure_water[i*MAX_FLUIDNUM + k] = simData.CoCompressibility*fluidSum;
 				buf.mf_beta[i*MAX_FLUIDNUM + k] = beta[k];

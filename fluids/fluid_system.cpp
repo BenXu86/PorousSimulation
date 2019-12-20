@@ -144,7 +144,7 @@ void FluidSystem::Setup ( bool bStart )
 	Sleep ( 500 );
 	FluidSetupRotationCUDA (panr, omega, loadwhich);
 	ElasticSetupCUDA(numElasticPoints, miu, lambda, porosity, m_Permeability, maxNeighborNum);
-	PorousParamCUDA(bulkModulus_porous, bulkModulus_grains, bulkModulus_solid, bulkModulus_fluid);
+	PorousParamCUDA(bulkModulus_porous, bulkModulus_grains, bulkModulus_solid, bulkModulus_fluid, poroDeformStrength);
 	//Sleep(500);
 	FluidSetupCUDA ( NumPoints(), m_GridSrch, *(int3*)& m_GridRes, *(float3*)& m_GridSize, *(float3*)& m_GridDelta, *(float3*)& m_GridMin, *(float3*)& m_GridMax, m_GridTotal, (int) m_Vec[PEMIT_RATE].x );	
 	Sleep ( 500 );
@@ -1428,7 +1428,8 @@ void FluidSystem::ParseMFXML ( std::string name, int id, bool bStart )
 	upframe = xml.getValueI("Upframe");
 	xml.assignValueV3(&cont, "Cont");
 	xml.assignValueF(&relax, "Relax");
-	
+	xml.assignValueF(&poroDeformStrength, "poroDeformStrength");
+
 	xml.assignValueV3(&emit[0],"emit3");
 	xml.assignValueV3(&emit[1],"emit6");
 
@@ -2269,7 +2270,7 @@ void FluidSystem::setupSPHexample()
 	
 	m_Vec [ PINITMIN ].Set (volumes[4].x,volumes[4].y,volumes[4].z);
 	m_Vec [ PINITMAX ].Set (volumes[5].x,volumes[5].y,volumes[5].z);
-	SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
+	//SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
 	
 	m_Vec [ PINITMIN ].Set (softBoundary[0].x, softBoundary[0].y, softBoundary[0].z);
 	m_Vec [ PINITMAX ].Set (softBoundary[1].x, softBoundary[1].y, softBoundary[1].z);

@@ -222,6 +222,8 @@
 		float			CoCompressibility;
 
 		bool			HideBound, HideFluid, HideSolid;
+
+		float			poroDeformStrength;
 	};
 
 	// Prefix Sum defines - 16 banks on G80

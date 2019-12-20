@@ -451,6 +451,7 @@
 
 		float*					porosity_particle;
 		Vector3DF*				signDistance;//distance between solid particle to surface
+		float					poroDeformStrength;
 		//bool*					misGhost;
 	};	
 #endif

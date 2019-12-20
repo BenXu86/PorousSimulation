@@ -57,7 +57,7 @@
 	//elastic information
 	void ElasticSetupCUDA(int num,float miu,float lambda,float porosity,float* permeability,int maxNeighborNum);
 	//porous
-	void PorousParamCUDA(float bulkModulus_porous, float bulkModulus_grains, float bulkModulus_solid, float	bulkModulus_fluid);
+	void PorousParamCUDA(float bulkModulus_porous, float bulkModulus_grains, float bulkModulus_solid, float	bulkModulus_fluid,float poroDeformStrength);
 	//multi fluid
 	void FluidMfParamCUDA ( float *dens, float *visc, float diffusion, float catnum, float dt, float3 cont, float3 mb1, float3 mb2, float relax,int example);
 	void CopyMfToCUDA ( float* alpha, float* alpha_pre, float* pressure_modify, float* vel_phrel, float* restmass, float* restdensity, float* visc, float* velxcor, float* alphagrad);
