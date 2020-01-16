@@ -388,7 +388,9 @@ void keyboard_func ( unsigned char key, int x, int y )
 
 	switch( key ) {
 	case 'R': case 'r': {
-		psys.StartRecord ();
+		if (psys.GetYan(START_OUTPUT) == 0)
+			psys.SetYan(START_OUTPUT, 1);
+		//psys.StartRecord ();
 		} break;
 	//case 'P': case 'p': 	
 		/*switch ( psys.getMode() ) {

@@ -50,7 +50,7 @@
 
 		//multi fluid
 		float*			mf_alpha;				// MAX_FLUIDNUM * 4 bytes for each particle
-		float*			mf_alpha_pre;			// MAX_FLUIDNUM * 4 bytes for each particle
+		float*			mf_alpha_next;			// MAX_FLUIDNUM * 4 bytes for each particle
 		float*			mf_pressure_modify;	//  4 bytes for each particle
 		float3*			mf_vel_phrel;			// MAX_FLUIDNUM * 12 bytes for each particle  u_mk
 		float*			mf_restmass;		//²ÎÊýsimData.pmass
@@ -68,6 +68,7 @@
 		float*			pressure_water;
 		int*			solidCount;
 		float*			totalDis;
+		//float*			capillaryPotentials;
 
 		float3*			gradPressure;
 		float3*			poroVel;
@@ -153,9 +154,9 @@
 	#define BUF_BETANEXT	(BUF_ABSORBEDPERCENT + sizeof(float)*MAX_FLUIDNUM)
 
 	//porous
-	#define BUF_FVEL   (BUF_BETANEXT+sizeof(float)*MAX_FLUIDNUM)
+	#define BUF_FVEL		(BUF_BETANEXT+sizeof(float)*MAX_FLUIDNUM)
 	#define BUF_POROVEL		(BUF_FVEL+sizeof(float3)*MAX_FLUIDNUM)
-
+	#define BUF_CP			(BUF_POROVEL+sizeof(float3)*MAX_FLUIDNUM)
 	// Fluid Parameters (stored on both host and device)
 	struct FluidParams {
 		int				numThreads, numBlocks;

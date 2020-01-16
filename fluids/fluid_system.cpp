@@ -10,6 +10,11 @@
 #include "mtime.h"
 #include "fluid_system.h"
 #include "fluid_system_host.cuh"
+
+#include <io.h>
+#include <direct.h>
+#include <iostream>
+#include <fstream>
 //¼ÆÊ±
 #include <Mmsystem.h>
 #pragma comment(lib, "Winmm.lib")
@@ -48,7 +53,7 @@ void FluidSystem::TransferFromCUDA ()
 {
 	CopyFromCUDA ( (float*) mPos, (float*) mVel, (float*) mVelEval, (float*) mForce, mPressure, mDensity, mClusterCell, mGridNext, (char*) mClr, 1);
 	CopyMfFromCUDA ( m_alpha, m_alpha_pre, m_pressure_modify, (float*) m_vel_phrel, m_restMass, m_restDensity, m_visc, (float*)m_velxcor, (float*)m_alphagrad, 1);
-	CopyFromCUDA_Uproject(MF_type);
+	CopyFromCUDA_Uproject(MF_type,m_beta);
 
 #ifdef NEW_BOUND
 	CopyBoundFromCUDA(mIsBound);
@@ -62,7 +67,7 @@ void FluidSystem::TransferFromCUDAForLoad ()
 #ifdef NEW_BOUND
 	CopyBoundFromCUDA(mIsBound);
 #endif
-	CopyFromCUDA_Uproject(MF_type);
+	CopyFromCUDA_Uproject(MF_type, m_beta);
 }
 
 //------------------------------ Initialization
@@ -178,7 +183,12 @@ char dsttmp[100];
 void FluidSystem::outputFile()
 {
 	FILE* fp;
-	sprintf(dsttmp,"OutputData\\data_%04d.txt",nOutFrame);
+	
+	sprintf(dsttmp, "OutputData\\data_%04d.txt", nOutFrame);
+	if (_access(dsttmp, 0) == -1)
+		_mkdir(dsttmp);
+
+	
 	fp = fopen(dsttmp,"w");
 	fprintf(fp,"%d\n",NumPoints());
 	Vector3DF* ppos = mPos;
@@ -194,7 +204,84 @@ void FluidSystem::outputFile()
 	fclose(fp);
 	nOutFrame++;
 }
+void FluidSystem::storeModel(char* filename)
+{
+	FILE* fp;
+	sprintf(dsttmp, filename, nOutFrame);
+	fp = fopen(dsttmp, "w");
+	fprintf(fp, "%d\n", numElasticPoints);
+	Vector3DF* ppos = mPos;
+	for (int i = 0; i<NumPoints(); i++, ppos++) {
+		if(MF_type[i]==1)
+			fprintf(fp, "%f %f %f\n", mPos[i].x, mPos[i].y, mPos[i].z);
+	}
+	fclose(fp);
+}
 
+void FluidSystem::LoadParticles(char* filename)
+{
+	fstream f;
+	f.open(filename, ios::in);
+	int num;
+	f >> num;
+	float x, y, z;
+	int n = numElasticPoints;
+	int p;
+	for (int i = 0; i<num; i++) {
+		f >> x >> y >> z;
+		p = AddParticle();
+		if (p != -1)
+		{
+
+			*(elasticID + p) = n;
+			(mPos + p)->Set(x, y, z);
+
+			*(m_alpha + p*MAX_FLUIDNUM) = 1.0f; *(m_alpha_pre + p*MAX_FLUIDNUM) = 1.0f;
+			*(m_restMass + p) = m_fluidPMass[0];
+			*(m_restDensity + p) = m_fluidDensity[0];
+
+			*(m_visc + p) = m_fluidVisc[0];
+			*(mIsBound + p) = false;
+			*(MF_type + p) = 1; //1 means deformable
+
+			*(porosity_particle + n) = porosity;
+
+			n++;
+		}
+
+	}
+	numElasticPoints = n;
+	f.close();
+}
+int countNeighborNum(float radius, Vector3DF pos, Vector3DF* mpos, int num)
+{
+	Vector3DF d;
+	float distance;
+	int count = 0;
+	for (int p = 0; p < num; ++p)
+	{
+		d = pos - mpos[p];
+		distance = d.x*d.x+d.y*d.y+d.z*d.z;
+		if (distance < radius)
+			count++;
+	}
+	return count;
+}
+void FluidSystem::solveModel()
+{
+	int n = numElasticPoints;
+	int count;
+	float radius = m_Param[PSMOOTHRADIUS] * m_Param[PSMOOTHRADIUS]/(m_Param[PSIMSCALE]* m_Param[PSIMSCALE]);
+	for(int p=0;p<n;++p)
+	{
+		count = countNeighborNum(radius, mPos[p], mPos, n);
+		if (count < 8)
+		{
+			MF_type[p] = 0;
+			numElasticPoints--;
+		}
+	}
+}
 void FluidSystem::OnfirstRun()
 {
 	printf("on first run\n");
@@ -295,15 +382,17 @@ void FluidSystem::Run (int width, int height)
 	m_Param[ PTIME_ADVANCE ] = 0.0;
 	ParamUpdateCUDA(m_Toggle[HIDEBOUND], m_Toggle[HIDEFLUID], m_Toggle[HIDESOLID]);
 
-	//DWORD start = timeGetTime();
+	mint::Time start;
+	start.SetSystemTime(ACC_NSEC);
 	RunSimulateMultiCUDAFull();
 	//DWORD end = timeGetTime();
 	//printf("simulate time %d\n", end - start);
-	/*if ( mMode == RUN_RECORD ) {
+	if ( GetYan(START_OUTPUT) && m_Frame % (int)(0.005 / m_DT) == 0) {
+		//StartRecord();
 		start.SetSystemTime ( ACC_NSEC );
 		Record ();
 		record ( PTIME_RECORD, "Record", start );
-	}*/
+	}
 	
 	if ( m_Toggle[PCAPTURE] && m_Frame %(int)(0.005/m_DT)==0){//controlled by '`'
 		CaptureVideo ( width, height );
@@ -330,9 +419,9 @@ void FluidSystem::Run (int width, int height)
 
 	if(m_Frame == 27000)
 		bPause = !bPause;
-	if ( GetYan(START_OUTPUT)==1 && m_Frame %(int)(0.005/m_DT)==0 ){ //controlled by 'b'
-		outputFile();
-	}
+	//if ( GetYan(START_OUTPUT)==1 && m_Frame %(int)(0.005/m_DT)==0 ){ //controlled by 'b'
+	//	outputFile();
+	//}
 
 	m_Time += m_DT;
 	m_Frame++;
@@ -452,6 +541,10 @@ void FluidSystem::AllocateParticles ( int cnt )
 	float* src_alpha = m_alpha;
 	m_alpha = (float*)		malloc ( EMIT_BUF_RATIO*cnt*MAX_FLUIDNUM*sizeof(float));
 	if (src_alpha != 0x0)	{ memcpy (m_alpha, src_alpha, nump * MAX_FLUIDNUM * sizeof(float)); free(src_alpha);}
+
+	float* src_beta = m_beta;
+	m_beta = (float*)malloc(EMIT_BUF_RATIO*cnt*MAX_FLUIDNUM * sizeof(float));
+	if (src_beta != 0x0) { memcpy(m_beta, src_beta, nump * MAX_FLUIDNUM * sizeof(float)); free(src_beta); }
 
 	float* src_alpha_pre = m_alpha_pre;
 	m_alpha_pre = (float*)	malloc ( EMIT_BUF_RATIO*cnt*MAX_FLUIDNUM*sizeof(float));
@@ -1041,7 +1134,7 @@ void FluidSystem::Draw ( Camera3D& cam, float rad )
 std::string FluidSystem::getFilename ( int n )
 {
 	char name[100];
-	sprintf ( name, "particles%04d.dat", n );
+	sprintf ( name, "OutputData\\particles%04d.dat", n );
 	return name;
 }
 
@@ -1076,46 +1169,93 @@ int FluidSystem::getLastRecording ()
 
 void FluidSystem::Record ()
 {
+	mFileNum = getLastRecording() + 1;
+	mFileName = getFilename(mFileNum);
+	//if (mFP != 0x0) fclose(mFP);
+	char name[100];
+	strcpy(name, mFileName.c_str());
+	ofstream out(name);
+	//mFP = fopen(name, "wb");
+	//if (mFP == 0x0) {
+	//	printf("ERROR: Cannot write file %s\n", mFileName.c_str());
+	//	exit(-1);
+	//}
+	//mLastPoints = 0;
+	//mFileSize = 0;
+
+
 	Vector3DF*  ppos =		mPos;
 	Vector3DF*  pvel =		mVel;
 	float*		pdens =		mDensity;
 	DWORD*		pclr =		mClr;
-	
+	int*		bound = mIsBound;
 	char*		dat = mPackBuf;
+	int*		type = MF_type;
 	int			channels;
 	int			dsize;
-
-	fwrite ( &mNumPoints, sizeof(int), 1, mFP );
-	
+	out << NumPointsNoBound<<" "<<softBoundary[0].x << " " << softBoundary[0].z 
+		<< " " << softBoundary[0].y << " " << softBoundary[1].x 
+		<< " " << softBoundary[1].z << " " << softBoundary[1].y <<endl;
+	//fwrite ( &mNumPoints, sizeof(int), 1, mFP );
+	//cout << "output file: " << mFP << endl;
 	// How many channels to write? 
-	channels = 4;
-	if ( mNumPoints == mLastPoints ) channels = 2;		// save disk space
-	fwrite ( &channels, sizeof(int), 1, mFP ) ;
+	
+	//fwrite ( &channels, sizeof(int), 1, mFP ) ;
 	
 	// Write data
-	if ( channels == 2 ) {	
-		dsize = sizeof(Vector3DF)+sizeof(DWORD);
-		for (int n=0; n < mNumPoints; n++ ) {
-			*(Vector3DF*) dat = *ppos++;		dat += sizeof(Vector3DF);
-			*(DWORD*)	  dat = *pclr++;		dat += sizeof(DWORD);
+	//if ( channels == 2 ) {	
+	//	dsize = sizeof(Vector3DF)+sizeof(DWORD);
+	for (int n=0; n < mNumPoints; n++ ) {
+		if (*bound++ == 1)
+		{
+			ppos++; pclr++; type++;
+			continue;
 		}
-	} else {
-		dsize = sizeof(Vector3DF)+sizeof(Vector3DF)+sizeof(float)+sizeof(DWORD);
-		for (int n=0; n < mNumPoints; n++ ) {
-			*(Vector3DF*) dat = *ppos++;		dat += sizeof(Vector3DF);
-			*(Vector3DF*) dat = *pvel++;		dat += sizeof(Vector3DF);
-			*(float*)	  dat = *pdens++;		dat += sizeof(float);
-			*(DWORD*)	  dat = *pclr++;		dat += sizeof(DWORD);
+		/*if ((*ppos).y < 0)
+			continue;*/
+		//*(Vector3DF*) dat = *ppos++;		dat += sizeof(Vector3DF);
+		//out << n << " " << ((Vector3DF*)dat)->x
+		//*(DWORD*)	  dat = *pclr++;		dat += sizeof(DWORD);
+
+		out << ppos->x << " " << ppos->z << " " << ppos->y << " ";
+		if (*type == 1)
+		{
+			float FP = m_beta[n*MAX_FLUIDNUM + 1] + m_beta[n*MAX_FLUIDNUM + 2];
+			out << 1 / (1 + 5 * FP) << " " << 1 / (1 + 5 * FP) << " " << 0<<" " << 1 << " ";
 		}
+		else
+			out << 1 << " " << 1 << " " << 1 << " " << m_alpha[n*MAX_FLUIDNUM + 2] + m_alpha[n*MAX_FLUIDNUM + 1] +
+			m_alpha[n*MAX_FLUIDNUM + 0]<<" ";
+		out << 0 << " " << 0 << endl;
+		ppos++; pclr++; type++;
+			
 	}
-		
-	fwrite ( mPackBuf, dsize, mNumPoints, mFP );
+	//} 
+	//else {
+	//	dsize = sizeof(Vector3DF)+sizeof(Vector3DF)+sizeof(float)+sizeof(DWORD);
+	//	for (int n=0; n < mNumPoints; n++ ) {
+	//		if (*bound++ == 1)
+	//		{
+	//			ppos++; pclr++; pdens++; pvel++;
+	//			continue;
+	//		}
+	//		//*(Vector3DF*) dat = *ppos++;		dat += sizeof(Vector3DF);
+	//		//*(Vector3DF*) dat = *pvel++;		dat += sizeof(Vector3DF);
+	//		//*(float*)	  dat = *pdens++;		dat += sizeof(float);
+	//		//*(DWORD*)	  dat = *pclr++;		dat += sizeof(DWORD);
+	//		out << ppos->x << " " << ppos->y << " " << ppos->z << " ";
+	//		
+	//		ppos++; pclr++; pdens++; pvel++;
+	//	}
+	//}
+	out.close();
+	//fwrite ( mPackBuf, dsize, mNumPoints, mFP );
 
 	mFileSize += float(dsize * mNumPoints) / 1048576.0;
 
 	mLastPoints = mNumPoints;
 
-	fflush ( mFP );
+	//fflush ( mFP );
 }
 
 std::string FluidSystem::getModeStr ()
@@ -1520,7 +1660,7 @@ void FluidSystem::CaptureVideo (int width, int height)
 	return;
 }
 
-void FluidSystem::SetupMfAddVolume ( Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int cat )
+int FluidSystem::SetupMfAddVolume ( Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int cat )
 {
 	Vector3DF pos;
 	int n = 0, p;
@@ -1532,7 +1672,7 @@ void FluidSystem::SetupMfAddVolume ( Vector3DF min, Vector3DF max, float spacing
 	int xp, yp, zp, c2;
 	float odd;
 
-	if(cat >= m_Param [ FLUID_CATNUM ])return;
+	if(cat >= m_Param [ FLUID_CATNUM ])return 0;
 	
 	dx = max.x-min.x;
 	dy = max.y-min.y;
@@ -1572,6 +1712,7 @@ void FluidSystem::SetupMfAddVolume ( Vector3DF min, Vector3DF max, float spacing
 		}
 	}	
 	printf("%d fluid has %d particles\n",cat,n);
+	return n;
 }
 void FluidSystem::SetupBoundary(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int cat)
 {
@@ -1800,7 +1941,34 @@ int FluidSystem::loadParticle(std::string name)
 	fclose(fp);
 	return n;
 }
+int FluidSystem::SetupAddMonster(BI2Reader bi2reader, int type, int cat)
+{
+	//printf("%f %f %f %f\n", m_Param[PBMASS], m_Param[PBRESTDENSITY], m_Param[PBVISC], m_Param[PBSTIFF]);
+	float x, y, z, n = 0;
+	for (int i = 0; i<bi2reader.info.nbound; i++)
+	{
+		x = bi2reader.info.Pos[i].x / m_Param[PSIMSCALE];
+		y = bi2reader.info.Pos[i].y / m_Param[PSIMSCALE];
+		z = bi2reader.info.Pos[i].z / m_Param[PSIMSCALE];
+		if (x < m_Vec[PVOLMIN].x || x>m_Vec[PVOLMAX].x || y<m_Vec[PVOLMIN].y || y> m_Vec[PVOLMAX].y || z<m_Vec[PVOLMIN].z || z>m_Vec[PVOLMAX].z)
+			continue;
 
+		int p = AddParticle();
+		if (p != -1)
+		{
+			(mPos + p)->Set(bi2reader.info.Pos[i].x / m_Param[PSIMSCALE]-25, bi2reader.info.Pos[i].y / m_Param[PSIMSCALE]-25, bi2reader.info.Pos[i].z / m_Param[PSIMSCALE]+25);
+			*(mClr + p) = COLORA(1, 1, 1, 0);
+			*(mIsBound + p) = false;
+			*(m_restMass + p) = m_Param[PBMASS];
+			*(m_restDensity + p) = m_fluidDensity[cat];
+			*(m_visc + p) = m_fluidVisc[cat];
+			*(MF_type + p) = type;//which means rigid (project-u)
+			*(m_alpha + p*MAX_FLUIDNUM + cat) = 1.0f; *(m_alpha_pre + p*MAX_FLUIDNUM + cat) = 1.0f;
+			n++;
+		}
+	}
+	return n;
+}
 #ifdef NEW_BOUND
 void FluidSystem::SetupAddBound(BI2Reader bi2reader,int boundtype)
 {
@@ -2133,6 +2301,72 @@ void FluidSystem::EmitUpdateCUDA (int startnum, int endnum)
 	UpdatePNumCUDA(endnum);
 	cudaThreadSynchronize ();
 }
+int findNearestV(PIC* bunny, float x, float y, float z)
+{
+	float minD = 100000000;
+	float distance;
+	int index = -1;
+	for (int i = 0; i < bunny->V.size(); ++i)
+	{
+		distance = pow(x - bunny->V[i].X, 2) + pow(y - bunny->V[i].Y, 2) + pow(z - bunny->V[i].Z, 2);
+		if (distance <minD)
+		{
+			index = i;
+			minD = distance;
+		}
+	}
+	return index;
+}
+int FluidSystem::SetupModel(PIC* bunny, float spacing, int type, Vector3DF displacement)
+{
+	Vector3DF pos;
+	int n = 0, p;
+	float x, y, z;
+	int cntx, cnty, cntz;
+	int index;
+	cntx = ceil((bunny->maxPos.X - bunny->minPos.X) / spacing);
+	cntz = ceil((bunny->maxPos.Z - bunny->minPos.Z) / spacing);
+	int cnt = cntx * cntz;
+	int xp, yp, zp, c2;
+	float odd;
+
+	c2 = cnt / 2;
+	for (float y = bunny->minPos.Y; y <= bunny->maxPos.Y; y += spacing)
+	{
+		for (int xz = 0; xz < cnt; xz++) {
+
+			x = bunny->minPos.X + (xz % int(cntx))*spacing;
+			z = bunny->minPos.Z + (xz / int(cntx))*spacing;
+			index = findNearestV(bunny, x, y, z);
+			/*printf("pos is (%f,%f,%f), nearest point is (%f,%f,%f), index is %d\n",
+			x, y, z, bunny->V[index].X, bunny->V[index].Y, bunny->V[index].Z, index);*/
+			if (bunny->VN[index].NX*(bunny->V[index].X - x) + bunny->VN[index].NY*(bunny->V[index].Y - y) +
+				bunny->VN[index].NZ*(bunny->V[index].Z - z) < 0)
+				continue;
+			p = AddParticle();
+			if (p != -1)
+			{
+				//dist = sqrt(pow(zcenter - z, 2) + pow(xcenter - x, 2) + pow(ycenter - y, 2));
+				*(elasticID + p) = n;
+				(mPos + p)->Set(x+displacement.x, y+ displacement.y, z+ displacement.z);
+
+				*(m_alpha + p*MAX_FLUIDNUM + type) = 1.0f; *(m_alpha_pre + p*MAX_FLUIDNUM + type) = 1.0f;
+				*(m_restMass + p) = m_fluidPMass[0];
+				*(m_restDensity + p) = m_fluidDensity[0];
+
+				*(m_visc + p) = m_fluidVisc[0];
+				*(mIsBound + p) = false;
+				*(MF_type + p) = 1; //1 means deformable
+
+				*(porosity_particle + n) = porosity;
+
+				n++;
+			}
+			
+		}
+	}
+	return n;
+}
 
 int FluidSystem::SetupMfAddDeformVolume ( Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type )
 {
@@ -2215,14 +2449,27 @@ void FluidSystem::setupSPHexample()
 	
 	BI2Reader* bi2readers[10]; //ten pointers to build bi2reader dynamically, in use now
 	char biname[200];
-	sprintf(biname,".\\extra_particles\\Boundary1.bi2");
-	bi2readers[0] = new BI2Reader(biname);
-	bi2readers[0]->GetInfo(false);
-	bi2readers[0]->PrintInfo();
+	//sprintf(biname,".\\extra_particles\\Boundary1.bi2");
+	//bi2readers[0] = new BI2Reader(biname);
+	//bi2readers[0]->GetInfo(false);
+	//bi2readers[0]->PrintInfo();
 	
+	//sprintf(biname, ".\\extra_particles\\monster2.bi2");
+	//bi2readers[1] = new BI2Reader(biname);
+	//bi2readers[1]->GetInfo(false);
+	//cout << "printing monster info" << endl;
+	//bi2readers[1]->PrintInfo();
+
+	//PIC bunny;
+	//bunny.ReadPIC(".\\extra_particles\\bunny1.obj");
+	//bunny.MapSimulateScale(m_Param[PSIMSCALE]);
+
+	//PIC armadillo;
+	//armadillo.ReadPIC(".\\extra_particles\\armadillo1.obj");
+	//armadillo.MapSimulateScale(m_Param[PSIMSCALE]);
+
 	//parse the xml and adjust some parameters according to scaleP
 	ParseMFXML ( "MultiScene", example, true );
-
 
 	//adjust the parametres according to the scale parameter
 	scaleP3 = pow(scaleP,1.0/3.0);
@@ -2233,7 +2480,8 @@ void FluidSystem::setupSPHexample()
 	m_Param[PRADIUS]/=scaleP3;
 	printf("scale P is %f, pnum is %d\n", scaleP, m_Param[PNUM]);
 	m_Param [PNUM]*=scaleP;
-	m_Param[PNUM] += bi2readers[0]->info.nbound;
+	//m_Param[PNUM] += bi2readers[0]->info.nbound;
+	m_Param[PNUM] += bi2readers[1]->info.nbound;
 
 	m_Param [PGRIDSIZE] = 2*m_Param[PSMOOTHRADIUS] / m_Param[PGRID_DENSITY];
 	
@@ -2261,12 +2509,20 @@ void FluidSystem::setupSPHexample()
 	m_Vec [ PINITMIN ].Set (volumes[0].x,volumes[0].y,volumes[0].z);
 	m_Vec [ PINITMAX ].Set (volumes[1].x,volumes[1].y,volumes[1].z);
 	//SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),1);
-	numElasticPoints = SetupMfAddDeformVolume(m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0, 0, 0), 0);
+	//numElasticPoints = SetupMfAddDeformVolume(m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0, 0, 0), 0);
+	//numElasticPoints = SetupModel(&armadillo, m_Param[PSPACING], 0, Vector3DF(-10,20,10));
+	//NumPointsNoBound = SetupAddMonster(*bi2readers[1], 0, 1);
+	
+	//LoadParticles(".\\extra_particles\\armadillo.txt");
+	LoadParticles(".\\extra_particles\\bunny.txt");
+	//solveModel();
+	//storeModel("bunny.txt");
+	NumPointsNoBound = numElasticPoints;
 	//numElasticPoints = SetupMfAddCylinder ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),0);
 	//SetupMfAddDeformVolume
 	m_Vec [ PINITMIN ].Set (volumes[2].x,volumes[2].y,volumes[2].z);
 	m_Vec [ PINITMAX ].Set (volumes[3].x,volumes[3].y,volumes[3].z);
-	SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),1);
+	NumPointsNoBound += SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),1);
 	
 	m_Vec [ PINITMIN ].Set (volumes[4].x,volumes[4].y,volumes[4].z);
 	m_Vec [ PINITMAX ].Set (volumes[5].x,volumes[5].y,volumes[5].z);

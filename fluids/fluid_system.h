@@ -34,6 +34,7 @@
 	#include "gl_helper.h"
 	#include "xml_settings.h"
 	#include "BI2Reader.h"
+	#include "ObjReader.h"
 
 	#define MAX_PARAM			60
 	#define GRID_UCHAR			0xFF
@@ -216,6 +217,7 @@
 #ifdef NEW_BOUND
 		void SetupAddBound(BI2Reader bi2reader,int boundtype);
 #endif
+		int SetupAddMonster(BI2Reader bi2reader, int type, int cat);
 		void SetupAddShape(BI2Reader bi2reader,int cat);
 		void SetupGridAllocate ( Vector3DF min, Vector3DF max, float sim_scale, float cell_size, float border );
 		void ParseXML ( std::string name, int id, bool bStart );
@@ -226,11 +228,13 @@
 		void liftup(int mode);
 
 		void ParseMFXML ( std::string name, int id, bool bStart );
-		void SetupMfAddVolume( Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int cat);// cat: category label
+		int SetupMfAddVolume( Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int cat);// cat: category label
 		int SetupMfAddCylinder(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 		void SetupBoundary(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 
 		int SetupMfAddDeformVolume( Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
+		int SetupModel(PIC*model, float spacing, int type, Vector3DF displacement);
+		int GenerateBunnies(PIC*bunny, float spacing, int type);
 
 		void AddMfEmit(float spacing, int cat);
 		void EmitMfParticles(int cat);
@@ -316,7 +320,10 @@
 		void outputFile();
 		void outputepsilon(FILE* fp);
 
-		
+		void storeModel(char* filename);
+
+		void LoadParticles(char* filename);
+		void solveModel();
 	private:
 
 		std::string				mSceneName;
@@ -338,6 +345,7 @@
 		double					gradCubicSplineKern1, gradCubicSplineKern2;
 		// Particle Buffers
 		int						mNumPoints;
+		int						NumPointsNoBound;
 		int						mMaxPoints;
 		int						mGoodPoints;
 		Vector3DF*				mPos;
@@ -356,6 +364,7 @@
 		uint*					mNbrCnt;
 
 		float*					m_alpha;  //size: mMaxPoints * MAX_FLUIDNUM
+		float*					m_beta;
 		float*					m_alpha_pre; //size: mMaxPoints * MAX_FLUIDNUM
 		float*					m_pressure_modify; //size: mMaxPoints * MAX_FLUIDNUM
 		Vector3DF*				m_vel_phrel; //size: mMaxPoints * MAX_FLUIDNUM

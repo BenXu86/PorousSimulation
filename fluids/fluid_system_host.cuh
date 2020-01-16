@@ -76,7 +76,7 @@
 	void CopyBoundFromCUDA(int* isbound);
 
 	void CopyToCUDA_Uproject(int* mftype);
-	void CopyFromCUDA_Uproject(int* mftype);
+	void CopyFromCUDA_Uproject(int* mftype, float*beta);
 	
 	void CopyToCUDA_elastic(uint*elasticID, float*porosity,float*signDistance);
 	void CopyFromCUDA_elastic();
