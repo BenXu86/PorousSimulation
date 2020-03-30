@@ -456,6 +456,7 @@ void keyboard_func ( unsigned char key, int x, int y )
 	case '1':				psys.Toggle(HIDEFLUID); break;//psys.IncParam ( PDRAWGRID, 1, 0, 1 );		break;
 	case '2':				psys.Toggle(HIDESOLID); break;//psys.IncParam ( PDRAWTEXT, 1, 0, 1 );		break;
 	case '3':				psys.Toggle(HIDEBOUND);						break;
+	case '4':				psys.Toggle(HIDERIGID); break;
 	//case '3':break;
 	case 'C':	//mode = MODE_CAM_TO;
 		psys.liftup(0);

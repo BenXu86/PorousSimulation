@@ -53,13 +53,13 @@
 	void FluidSetupCUDA (  int num, int gsrch, int3 res, float3 size, float3 delta, float3 gmin, float3 gmax, int total, int chk);
 	void FluidParamCUDA ( float ss, float sr, float pr, float mass, float rest, float3 bmin, float3 bmax, float estiff, float istiff, float pbstiff, float visc, float damp, float fmin, float fmax, float ffreq, float gslope, float gx, float gy, float gz, float al, float vl );
 	void FluidParamCUDA_projectu(float v_factor, float f_factor, float s_factor,float bdamp);
-	void ParamUpdateCUDA(bool hidebound, bool hidefluid,bool hidesolid);
+	void ParamUpdateCUDA(bool hidebound, bool hidefluid,bool hidesolid,bool hiderigid);
 	//elastic information
-	void ElasticSetupCUDA(int num,float miu,float lambda,float porosity,float* permeability,int maxNeighborNum);
+	void ElasticSetupCUDA(int num,float miu,float lambda,float porosity,float* permeability,int maxNeighborNum, float* permRatio);
 	//porous
-	void PorousParamCUDA(float bulkModulus_porous, float bulkModulus_grains, float bulkModulus_solid, float	bulkModulus_fluid,float poroDeformStrength);
+	void PorousParamCUDA(float bulkModulus_porous, float bulkModulus_grains, float bulkModulus_solid, float	bulkModulus_fluid,float poroDeformStrength, float capillary);
 	//multi fluid
-	void FluidMfParamCUDA ( float *dens, float *visc, float diffusion, float catnum, float dt, float3 cont, float3 mb1, float3 mb2, float relax,int example);
+	void FluidMfParamCUDA ( float *dens, float *visc, float*mass,float diffusion, float catnum, float dt, float3 cont, float3 mb1, float3 mb2, float relax,int example);
 	void CopyMfToCUDA ( float* alpha, float* alpha_pre, float* pressure_modify, float* vel_phrel, float* restmass, float* restdensity, float* visc, float* velxcor, float* alphagrad);
 	void CopyMfFromCUDA ( float* alpha, float* alpha_pre, float* pressure_modify, float* vel_phrel, float* restmass, float* restdensity, float* visc, float* velxcor, float* alphagrad, int mode);
 
@@ -108,7 +108,7 @@
 	//porous function
 	void ComputePorousForceCUDA();
 	//Project-U changes computing force
-	void ComputeForceCUDA_ProjectU(float time);
+	//void ComputeForceCUDA_ProjectU(float time);
 	void floatup_cuda(int mode);
 	int MfGetPnum();
 	void LeapFrogIntegration(float time);

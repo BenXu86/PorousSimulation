@@ -24,6 +24,7 @@ Vector3DF volumes[6],softBoundary[2],emit[2];
 Vector3DF cont,mb1,mb2;
 Vector4DF massRatio,densityRatio,viscRatio;
 Vector4DF permeabilityRatio;
+Vector4DF pressRatio;
 //float cont[3];
 int loadwhich;
 int example;
@@ -116,6 +117,7 @@ FluidSystem::FluidSystem ()
 	m_Toggle [ HIDEBOUND]   =   true;
 	m_Toggle [HIDEFLUID]    =   false;
 	m_Toggle [HIDESOLID]    =   false;
+	m_Toggle [HIDERIGID]    =   false;
 	memset(m_Yan,0,sizeof(m_Yan));
 	if ( !xml.Load ( "scene.xml" ) ) {
 		error.PrintF ( "fluid", "ERROR: Problem loading scene.xml. Check formatting.\n" );
@@ -148,9 +150,9 @@ void FluidSystem::Setup ( bool bStart )
 	FluidClearCUDA ();
 	Sleep ( 500 );
 	FluidSetupRotationCUDA (panr, omega, loadwhich);
-	ElasticSetupCUDA(numElasticPoints, miu, lambda, porosity, m_Permeability, maxNeighborNum);
-	PorousParamCUDA(bulkModulus_porous, bulkModulus_grains, bulkModulus_solid, bulkModulus_fluid, poroDeformStrength);
-	//Sleep(500);
+	ElasticSetupCUDA(numElasticPoints, miu, lambda, porosity, m_Permeability, maxNeighborNum, pressureRatio);
+	PorousParamCUDA(bulkModulus_porous, bulkModulus_grains, bulkModulus_solid, bulkModulus_fluid, poroDeformStrength, capillary);
+	
 	FluidSetupCUDA ( NumPoints(), m_GridSrch, *(int3*)& m_GridRes, *(float3*)& m_GridSize, *(float3*)& m_GridDelta, *(float3*)& m_GridMin, *(float3*)& m_GridMax, m_GridTotal, (int) m_Vec[PEMIT_RATE].x );	
 	Sleep ( 500 );
 
@@ -161,12 +163,12 @@ void FluidSystem::Setup ( bool bStart )
 		m_Param[PINTSTIFF],m_Param[PBSTIFF], m_Param[PVISC],    m_Param[PEXTDAMP],   
 		m_Param[PFORCE_MIN], m_Param[PFORCE_MAX],  m_Param[PFORCE_FREQ], m_Param[PGROUND_SLOPE], 
 		grav.x, grav.y, grav.z, m_Param[PACCEL_LIMIT], m_Param[PVEL_LIMIT] );
-	ParamUpdateCUDA(m_Toggle[HIDEBOUND], m_Toggle[HIDEFLUID], m_Toggle[HIDESOLID]);
+	ParamUpdateCUDA(m_Toggle[HIDEBOUND], m_Toggle[HIDEFLUID], m_Toggle[HIDESOLID],m_Toggle[HIDERIGID]);
 	//FluidParamCUDA ( m_Param[PSIMSCALE], m_Param[PSMOOTHRADIUS], m_Param[PRADIUS], m_Param[PMASS], m_Param[PRESTDENSITY], *(float3*)& m_Vec[PBOUNDMIN], *(float3*)& m_Vec[PBOUNDMAX], m_Param[PBSTIFF],   m_Param[PINTSTIFF],                  m_Param[PVISC],    m_Param[PEXTDAMP],   m_Param[PFORCE_MIN], m_Param[PFORCE_MAX],  m_Param[PFORCE_FREQ], m_Param[PGROUND_SLOPE], grav.x, grav.y, grav.z, m_Param[PACCEL_LIMIT], m_Param[PVEL_LIMIT] );
 	FluidParamCUDA_projectu(vfactor, fpfactor, spfactor,bdamp);
 	
-	FluidMfParamCUDA (m_fluidDensity,m_fluidVisc,m_fluidDiffusion,m_Param[FLUID_CATNUM], m_DT, *(float3*)& cont,*(float3*)& mb1,*(float3*)& mb2, relax, example);
-	
+	FluidMfParamCUDA (m_fluidDensity,m_fluidVisc,m_fluidPMass,m_fluidDiffusion,m_Param[FLUID_CATNUM], m_DT, *(float3*)& cont,*(float3*)& mb1,*(float3*)& mb2, relax, example);
+	//cout << "fluid catnum is " << m_Param[FLUID_CATNUM] << endl;
 	TransferToCUDA ();		// Initial transfer
 	
 	//Sorting
@@ -178,7 +180,50 @@ void FluidSystem::Setup ( bool bStart )
 	initSPH(m_restDensity, MF_type);
 	OnfirstRun();
 }
+void FluidSystem::RunSimulateMultiCUDAFull()
+{
+	mint::Time start;
+	start.SetSystemTime(ACC_NSEC);
+	//printf("start time is %f\n", start.)
+	//printf("RunSimulateMultiCUDAFull\n");
+	InitialSortCUDA(0x0, 0x0, 0x0);
+	record(PTIME_INSERT, "Insert CUDA", start);
+	start.SetSystemTime(ACC_NSEC);
 
+	SortGridCUDA(0x0);
+	CountingSortFullCUDA_(0x0);
+	record(PTIME_SORT, "Full Sort CUDA", start);
+	start.SetSystemTime(ACC_NSEC);
+
+	MfPredictAdvection(m_Time);
+	record(PTIME_SORT, "Predict Advection CUDA", start);
+	start.SetSystemTime(ACC_NSEC);
+
+	PressureSolve(0, NumPoints());
+
+	//printf("\n\n\n");
+	//计算u_mk,存储到mf_vel_phrel中
+	MfComputeDriftVelCUDA();                                          //case 1-diff
+	record(PTIMEDRIFTVEL, "Drift Velocity CUDA", start);
+	start.SetSystemTime(ACC_NSEC);
+
+	MfComputeAlphaAdvanceCUDA();									//case 1
+	record(PTIMEALPHA, "Alpha Advance CUDA", start);
+	start.SetSystemTime(ACC_NSEC);
+
+	ComputePorousForceCUDA();
+
+	ComputeElasticForceCUDA();
+
+	//MfComputeCorrectionCUDA();                                        //case5
+	//record(PTIMECORR, "Alpha Correction and Pressure CUDA", start);
+	//start.SetSystemTime(ACC_NSEC);
+
+	LeapFrogIntegration(m_Time);
+	record(PTIME_ADVANCE, "Advance CUDA", start);
+	TransferFromCUDA();	// return for rendering
+
+}
 char dsttmp[100];
 void FluidSystem::outputFile()
 {
@@ -218,7 +263,7 @@ void FluidSystem::storeModel(char* filename)
 	fclose(fp);
 }
 
-void FluidSystem::LoadParticles(char* filename)
+void FluidSystem::LoadParticles(char* filename, Vector3DF off)
 {
 	fstream f;
 	f.open(filename, ios::in);
@@ -234,7 +279,7 @@ void FluidSystem::LoadParticles(char* filename)
 		{
 
 			*(elasticID + p) = n;
-			(mPos + p)->Set(x, y, z);
+			(mPos + p)->Set(x+off.x, y+off.y, z+off.z);
 
 			*(m_alpha + p*MAX_FLUIDNUM) = 1.0f; *(m_alpha_pre + p*MAX_FLUIDNUM) = 1.0f;
 			*(m_restMass + p) = m_fluidPMass[0];
@@ -305,71 +350,22 @@ void FluidSystem::OnfirstRun()
 	record(PTIME_PRESS, "Compute CorrectL CUDA", start);
 	start.SetSystemTime(ACC_NSEC);
 
-	MfComputeDriftVelCUDA();                                          //case 1-diff
-	record(PTIMEDRIFTVEL, "Drift Velocity CUDA", start);
-	start.SetSystemTime(ACC_NSEC);
+	//MfComputeDriftVelCUDA();                                          //case 1-diff
+	//record(PTIMEDRIFTVEL, "Drift Velocity CUDA", start);
+	//start.SetSystemTime(ACC_NSEC);
 
-	MfComputeAlphaAdvanceCUDA();									//case 1
-	record ( PTIMEALPHA, "Alpha Advance CUDA", start );
-	start.SetSystemTime ( ACC_NSEC );
+	//MfComputeAlphaAdvanceCUDA();									//case 1
+	//record ( PTIMEALPHA, "Alpha Advance CUDA", start );
+	//start.SetSystemTime ( ACC_NSEC );
 
-	MfComputeCorrectionCUDA();                                        //case5
-	record ( PTIMECORR, "Alpha Correction and Pressure CUDA", start );		
-	start.SetSystemTime ( ACC_NSEC );
-
-	//ComputeForceCUDA_ProjectU(m_Time);
-
-	//ComputeForceCUDA();
-	//record ( PTIME_FORCE, "Force CUDA", start );
+	//MfComputeCorrectionCUDA();                                        //case5
+	//record ( PTIMECORR, "Alpha Correction and Pressure CUDA", start );		
 	//start.SetSystemTime ( ACC_NSEC );
 
 	TransferFromCUDA ();	// return for rendering
 }
 
-void FluidSystem::RunSimulateMultiCUDAFull ()
-{
-	mint::Time start;
-	start.SetSystemTime ( ACC_NSEC );
-	//printf("start time is %f\n", start.)
-	//printf("RunSimulateMultiCUDAFull\n");
-	InitialSortCUDA( 0x0, 0x0, 0x0 );
-	record ( PTIME_INSERT, "Insert CUDA", start );			
-	start.SetSystemTime ( ACC_NSEC );
 
-	SortGridCUDA( 0x0 );
-	CountingSortFullCUDA_( 0x0 );
-	record ( PTIME_SORT, "Full Sort CUDA", start );
-	start.SetSystemTime ( ACC_NSEC );
-	
-	MfPredictAdvection(m_Time);
-	record(PTIME_SORT, "Predict Advection CUDA", start);
-	start.SetSystemTime(ACC_NSEC);
-	
-	PressureSolve(0,NumPoints());
-	
-	//printf("\n\n\n");
-	//计算u_mk,存储到mf_vel_phrel中
-	MfComputeDriftVelCUDA();                                          //case 1-diff
-	record ( PTIMEDRIFTVEL, "Drift Velocity CUDA", start );
-	start.SetSystemTime ( ACC_NSEC );
-
-	MfComputeAlphaAdvanceCUDA();									//case 1
-	record ( PTIMEALPHA, "Alpha Advance CUDA", start );
-	start.SetSystemTime ( ACC_NSEC );
-
-	ComputePorousForceCUDA();
-
-	ComputeElasticForceCUDA();
-
-	//MfComputeCorrectionCUDA();                                        //case5
-	//record(PTIMECORR, "Alpha Correction and Pressure CUDA", start);
-	//start.SetSystemTime(ACC_NSEC);
-
-	LeapFrogIntegration(m_Time);
-	record ( PTIME_ADVANCE, "Advance CUDA", start );
-	TransferFromCUDA ();	// return for rendering
-
-}
 extern bool    bPause;
 void FluidSystem::Run (int width, int height)
 {
@@ -380,7 +376,7 @@ void FluidSystem::Run (int width, int height)
 	m_Param[ PTIME_PRESS ] = 0.0;
 	m_Param[ PTIME_FORCE ] = 0.0;
 	m_Param[ PTIME_ADVANCE ] = 0.0;
-	ParamUpdateCUDA(m_Toggle[HIDEBOUND], m_Toggle[HIDEFLUID], m_Toggle[HIDESOLID]);
+	ParamUpdateCUDA(m_Toggle[HIDEBOUND], m_Toggle[HIDEFLUID], m_Toggle[HIDESOLID],m_Toggle[HIDERIGID]);
 
 	mint::Time start;
 	start.SetSystemTime(ACC_NSEC);
@@ -926,10 +922,10 @@ void FluidSystem::Draw ( Camera3D& cam, float rad )
 			break;
 		}
 		
-		if(example==3)
+		/*if(example==3)
 			for (int i = 0;i<NumPoints();i++)
 				if (mPos[i].y>23||mPos[i].y<0)
-					mPos[i].y=mPos[i].z=mPos[i].x = -1000;
+					mPos[i].y=mPos[i].z=mPos[i].x = -1000;*/
 		/*if (GetYan(SAVE_STAT) == 1)
 			saveParticle("save_stat.txt");
 
@@ -1563,12 +1559,14 @@ void FluidSystem::ParseMFXML ( std::string name, int id, bool bStart )
 	xml.assignValueV4(&densityRatio,"DensityRatio");
 	xml.assignValueV4(&viscRatio,"ViscRatio");
 	xml.assignValueV4(&permeabilityRatio, "permeabilityRatio");
+	xml.assignValueV4(&pressRatio, "pressureRatio");
 
 	loadwhich = xml.getValueI("LoadWhich");
 	upframe = xml.getValueI("Upframe");
 	xml.assignValueV3(&cont, "Cont");
 	xml.assignValueF(&relax, "Relax");
 	xml.assignValueF(&poroDeformStrength, "poroDeformStrength");
+	xml.assignValueF(&capillary, "capillary");
 
 	xml.assignValueV3(&emit[0],"emit3");
 	xml.assignValueV3(&emit[1],"emit6");
@@ -1668,6 +1666,8 @@ int FluidSystem::SetupMfAddVolume ( Vector3DF min, Vector3DF max, float spacing,
 	int cntx, cnty, cntz;
 	cntx = ceil( (max.x-min.x-offs.x) / spacing );
 	cntz = ceil( (max.z-min.z-offs.z) / spacing );
+	cnty = ceil((max.y - min.y - offs.y) / spacing);
+	//printf("cntx is %d, cntz is %d, cnty is %d, total is %d\n", cntx, cntz, cnty, cntx*cntz*cnty);
 	int cnt = cntx * cntz;
 	int xp, yp, zp, c2;
 	float odd;
@@ -1702,11 +1702,16 @@ int FluidSystem::SetupMfAddVolume ( Vector3DF min, Vector3DF max, float spacing,
 	//			*(mClr+p) = COLORA( (x-min.x)/dx, (y-min.y)/dy, (z-min.z)/dz, 1); 
 				*(mClr+p) = COLORA( 0.25, +0.25 + (y-min.y)*.75/dy, 0.25 + (z-min.z)*.75/dz, 1);  // (x-min.x)/dx
 				*(m_alpha+p*MAX_FLUIDNUM+cat) = 1.0f;*(m_alpha_pre+p*MAX_FLUIDNUM+cat) = 1.0f;
-				*(m_restMass+p) = m_fluidPMass[cat];
-				*(m_restDensity+p) = m_fluidDensity[cat];
-				
+				//*(m_restMass+p) = m_fluidPMass[cat];
+				//*(m_restDensity+p) = m_fluidDensity[cat];
+				//*(m_visc+p) = m_fluidVisc[cat];
+				//*(m_alpha + p*MAX_FLUIDNUM + 1) = 1; //*(m_alpha_pre + p*MAX_FLUIDNUM + 1) = 0.5f;
+				//*(m_alpha + p*MAX_FLUIDNUM + 1) = 0.5f; // *(m_alpha_pre + p*MAX_FLUIDNUM + 1) = 0.5f;
+				//*(m_alpha + p*MAX_FLUIDNUM + 2) = 0.5f; // *(m_alpha_pre + p*MAX_FLUIDNUM + 2) = 0.5f;
+				*(m_restMass+p) = m_fluidPMass[1]*0.5+0.5*m_fluidPMass[2];
+				*(m_restDensity+p) = m_fluidDensity[1]*0.5+0.5*m_fluidDensity[2];
+				*(m_visc+p) = m_fluidVisc[1]*0.5+0.5*m_fluidVisc[2];
 
-				*(m_visc+p) = m_fluidVisc[cat];
 				*(MF_type+p) = 0; //which means liquid (project-u)
 			}
 		}
@@ -1714,6 +1719,129 @@ int FluidSystem::SetupMfAddVolume ( Vector3DF min, Vector3DF max, float spacing,
 	printf("%d fluid has %d particles\n",cat,n);
 	return n;
 }
+int FluidSystem::SetupMfAddGridSolid(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type)
+{
+	Vector3DF pos;
+	int n = 0, p;
+	float dx, dy, dz, x, y, z;
+	int cntx, cnty, cntz;
+	cntx = ceil((max.x - min.x - offs.x) / spacing);
+	cntz = ceil((max.z - min.z - offs.z) / spacing);
+	int holeSize = 3;//10*spacing as size
+	int cnt = cntx * cntz;
+	int xp, yp, zp, c2;
+	float odd;
+
+	dx = max.x - min.x;
+	dy = max.y - min.y;
+	dz = max.z - min.z;
+
+	c2 = cnt / 2;
+
+	float xcenter = max.x - dx / 2;
+	float ycenter = max.y - dy / 2;
+	int xindex, zindex;
+	float omega = 0.0;
+	float rx, ry;
+
+	float radius2 = pow(min(dx, dz) / 2, 2);
+	float2 center = make_float2(min.x + dx / 2, min.z + dz / 2);
+	for (float y = min.y + offs.y; y <= max.y; y += spacing) {
+		for (int xz = 0; xz < cnt; xz++) {
+			x = min.x + offs.x + (xz % int(cntx))*spacing;
+			z = min.z + offs.z + (xz / int(cntx))*spacing;
+
+			//xindex = ceil((x - min.x - offs.x) / spacing);
+			//zindex = ceil((z - min.z - offs.z) / spacing);
+			xindex = xz%cntx;
+			zindex = xz / cntx;
+			if (!(xindex % holeSize == 0 || zindex % holeSize == 0))
+				continue;
+
+			p = AddParticle();
+			if (p != -1) {
+				
+				n++;
+				(mPos + p)->Set(x, y, z);
+
+				*(mClr + p) = COLORA(1, 0, 1, 1);  // (x-min.x)/dx
+				//*(m_alpha + p*MAX_FLUIDNUM + type) = 1.0f; *(m_alpha_pre + p*MAX_FLUIDNUM + type) = 1.0f;
+				*(m_restMass + p) = m_fluidPMass[0];
+				*(m_restDensity + p) = m_fluidDensity[0];
+
+				*(m_visc + p) = m_fluidVisc[0];
+				*(MF_type + p) = 3;
+				*(mIsBound + p) = 1;
+				rx = x - xcenter;
+				ry = y - ycenter;
+			}
+		}
+	}
+	printf("%d fluid has %d particles\n", 0, n);
+	return n;
+}
+int FluidSystem::SetupMfAddSolidSolid(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type)
+{
+	Vector3DF pos;
+	int n = 0, p;
+	float dx, dy, dz, x, y, z;
+	int cntx, cnty, cntz;
+	cntx = ceil((max.x - min.x - offs.x) / spacing);
+	cntz = ceil((max.z - min.z - offs.z) / spacing);
+	int holeSize = 3;//10*spacing as size
+	int cnt = cntx * cntz;
+	int xp, yp, zp, c2;
+	float odd;
+
+	dx = max.x - min.x;
+	dy = max.y - min.y;
+	dz = max.z - min.z;
+
+	c2 = cnt / 2;
+
+	float xcenter = max.x - dx / 2;
+	float ycenter = max.y - dy / 2;
+	int xindex, zindex;
+	float omega = 0.0;
+	float rx, ry;
+
+	float radius2 = pow(min(dx, dz) / 2, 2);
+	float2 center = make_float2(min.x + dx / 2, min.z + dz / 2);
+	for (float y = min.y + offs.y; y <= max.y; y += spacing) {
+		for (int xz = 0; xz < cnt; xz++) {
+			x = min.x + offs.x + (xz % int(cntx))*spacing;
+			z = min.z + offs.z + (xz / int(cntx))*spacing;
+
+			//xindex = ceil((x - min.x - offs.x) / spacing);
+			//zindex = ceil((z - min.z - offs.z) / spacing);
+			//xindex = xz%cntx;
+			//zindex = xz / cntx;
+			//if (!(xindex % holeSize == 0 || zindex % holeSize == 0))
+			//	continue;
+
+			p = AddParticle();
+			if (p != -1) {
+				
+				n++;
+				(mPos + p)->Set(x, y, z);
+
+				*(mClr + p) = COLORA(1, 0, 1, 1);  // (x-min.x)/dx
+												   //*(m_alpha + p*MAX_FLUIDNUM + type) = 1.0f; *(m_alpha_pre + p*MAX_FLUIDNUM + type) = 1.0f;
+				*(m_restMass + p) = m_fluidPMass[0];
+				*(m_restDensity + p) = m_fluidDensity[0];
+
+				*(m_visc + p) = m_fluidVisc[0];
+				*(MF_type + p) = 3;
+				*(mIsBound + p) = 1;
+				//rx = x - xcenter;
+				//ry = y - ycenter;
+			}
+		}
+	}
+	printf("Solid solid has %d particles\n", n);
+	return n;
+}
+
 void FluidSystem::SetupBoundary(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int cat)
 {
 	Vector3DF pos;
@@ -1760,6 +1888,8 @@ void FluidSystem::SetupBoundary(Vector3DF min, Vector3DF max, float spacing, Vec
 			p = AddParticle();
 			if (p != -1)
 			{
+				//if (y > 50)
+				//	cout << "y is " << y << endl;
 				n++;
 				(mPos + p)->Set(x, y, z);
 				//*(mClr + p) = COLORA(0.25, +0.25 + (y - min.y)*.75 / dy, 0.25 + (z - min.z)*.75 / dz, 1);  // (x-min.x)/dx
@@ -1897,36 +2027,36 @@ int FluidSystem::loadParticle(std::string name)
 				fscanf(fp,"%f",(m_alpha+p*MAX_FLUIDNUM + j));
 				fscanf(fp,"%f",(m_alpha_pre+p*MAX_FLUIDNUM + j));
 			}
-			if(example==3){
-				for (int j = 0;j<MAX_FLUIDNUM;j++)
-				{
-					m_alpha[p*MAX_FLUIDNUM] = 0.15f;
-					m_alpha[p*MAX_FLUIDNUM+1] = 0.25f;
-					m_alpha[p*MAX_FLUIDNUM+2] = 0.4f;
-					m_alpha[p*MAX_FLUIDNUM+3] = 0.2f;
-					m_alpha_pre[p*MAX_FLUIDNUM] = 0.15f;
-					m_alpha_pre[p*MAX_FLUIDNUM+1] = 0.25f;
-					m_alpha_pre[p*MAX_FLUIDNUM+2] = 0.4f;
-					m_alpha_pre[p*MAX_FLUIDNUM+3] = 0.2f;
-				}
-			}
-			if(example==5){
-				for (int j = 0;j<MAX_FLUIDNUM;j++)
-				{
-					m_alpha[p*MAX_FLUIDNUM] = 0.0f;
-					m_alpha[p*MAX_FLUIDNUM+1] = 0.0f;
-					m_alpha[p*MAX_FLUIDNUM+2] = 0.0f;
-					m_alpha[p*MAX_FLUIDNUM+3] = 1.0f;
+	//		if(example==3){
+	//			for (int j = 0;j<MAX_FLUIDNUM;j++)
+	//			{
+	//				m_alpha[p*MAX_FLUIDNUM] = 0.15f;
+	//				m_alpha[p*MAX_FLUIDNUM+1] = 0.25f;
+	//				m_alpha[p*MAX_FLUIDNUM+2] = 0.4f;
 	//				m_alpha[p*MAX_FLUIDNUM+3] = 0.2f;
-	//				m_alpha[p*MAX_FLUIDNUM+4] = 0.2f;
-					m_alpha_pre[p*MAX_FLUIDNUM] = 0.0f;
-					m_alpha_pre[p*MAX_FLUIDNUM+1] = 0.0f;
-					m_alpha_pre[p*MAX_FLUIDNUM+2] = 0.0f;
-					m_alpha_pre[p*MAX_FLUIDNUM+3] = 1.0f;
+	//				m_alpha_pre[p*MAX_FLUIDNUM] = 0.15f;
+	//				m_alpha_pre[p*MAX_FLUIDNUM+1] = 0.25f;
+	//				m_alpha_pre[p*MAX_FLUIDNUM+2] = 0.4f;
 	//				m_alpha_pre[p*MAX_FLUIDNUM+3] = 0.2f;
-	//				m_alpha_pre[p*MAX_FLUIDNUM+4] = 0.2f;
-				}
-			}
+	//			}
+	//		}
+	//		if(example==5){
+	//			for (int j = 0;j<MAX_FLUIDNUM;j++)
+	//			{
+	//				m_alpha[p*MAX_FLUIDNUM] = 0.0f;
+	//				m_alpha[p*MAX_FLUIDNUM+1] = 0.0f;
+	//				m_alpha[p*MAX_FLUIDNUM+2] = 0.0f;
+	//				m_alpha[p*MAX_FLUIDNUM+3] = 1.0f;
+	////				m_alpha[p*MAX_FLUIDNUM+3] = 0.2f;
+	////				m_alpha[p*MAX_FLUIDNUM+4] = 0.2f;
+	//				m_alpha_pre[p*MAX_FLUIDNUM] = 0.0f;
+	//				m_alpha_pre[p*MAX_FLUIDNUM+1] = 0.0f;
+	//				m_alpha_pre[p*MAX_FLUIDNUM+2] = 0.0f;
+	//				m_alpha_pre[p*MAX_FLUIDNUM+3] = 1.0f;
+	////				m_alpha_pre[p*MAX_FLUIDNUM+3] = 0.2f;
+	////				m_alpha_pre[p*MAX_FLUIDNUM+4] = 0.2f;
+	//			}
+	//		}
 			fscanf(fp,"%f",m_restMass+p);
 			fscanf(fp,"%f",m_restDensity+p);
 			fscanf(fp,"%f",m_visc+p);
@@ -1997,188 +2127,188 @@ void FluidSystem::SetupAddBound(BI2Reader bi2reader,int boundtype)
 }
 #endif
 
-void FluidSystem::MfTestSetupExample ()
-{
-	example= _example;
-	m_Param[PEXAMPLE] = example;
-	printf("here we have example %d\n",example);
-	ParseXML_Bound("BoundInfo",example);
-
-	//load boundary and special models
-
-	BI2Reader* bi2readers[10]; //ten pointers to build bi2reader dynamically, in use now
-	char biname[200];
-	switch(example){
-#ifdef NEW_BOUND
-	case 1:
-		sprintf(biname,".\\extra_particles\\Boundary1.bi2");
-		bi2readers[0] = new BI2Reader(biname);
-		bi2readers[0]->GetInfo(false);
-		bi2readers[0]->PrintInfo();
-		break;
-	case 12:
-		sprintf(biname,".\\extra_particles\\Boundary12.bi2");
-		bi2readers[0] = new BI2Reader(biname);
-		bi2readers[0]->GetInfo(false);
-		bi2readers[0]->PrintInfo();
-		break;
-#endif
-	case 2:
-		sprintf(biname,".\\extra_particles\\monster2.bi2");
-		bi2readers[0] = new BI2Reader(biname);
-		bi2readers[0]->GetInfo(false);
-		bi2readers[0]->PrintInfo();
-		break;
-	}
-	double particleVisc =  m_Param[PVISC];
-
-	//parse the xml and adjust some parameters according to scaleP
-	ParseMFXML ( "MultiScene", example, true );
-	
-
-	//adjust the parametres according to the scale parameter
-	scaleP3 = pow(scaleP,1.0/3.0);
-	m_Param[PMASS]/=scaleP;
-#ifdef NEW_BOUND
-	m_Param[PBMASS]/=scaleP;
-#endif
-	m_Param[PSMOOTHRADIUS]/=scaleP3;
-	m_Param[PRADIUS]/=scaleP3;
-	m_Param [PNUM]*=scaleP;
-
-	//Add the number of boundary or monster to PNUM
-	switch(example){
-#ifdef NEW_BOUND
-	case 1:
-		m_Param[PNUM] += bi2readers[0]->info.nbound; //boundary particles
-		break;
-	case 12:
-		m_Param[PNUM] += bi2readers[0]->info.nbound; //boundary particles
-		break;
-	case 2:
-		m_Param[PNUM] += bi2readers[0]->info.nbound;//monster
-		break;
-	}
-#endif
-	m_Param [PGRIDSIZE] = 2*m_Param[PSMOOTHRADIUS] / m_Param[PGRID_DENSITY];
-	
-	m_fluidPMass[0] = m_Param[PMASS]*massRatio.x;
-	m_fluidPMass[1] = m_Param[PMASS]*massRatio.y;
-	m_fluidPMass[2] = m_Param[PMASS]*massRatio.z;
-	m_fluidDensity[0] = 600.0*densityRatio.x;
-	m_fluidDensity[1] = 600.0*densityRatio.y;
-	m_fluidDensity[2] = 600.0*densityRatio.z;
-	m_fluidVisc[0] =  particleVisc*viscRatio.x;
-	m_fluidVisc[1] =  particleVisc*viscRatio.y;
-	m_fluidVisc[2] =  particleVisc*viscRatio.z;
-	if(m_Param[FLUID_CATNUM]>3){
-		m_fluidPMass[3] = m_Param[PMASS]*massRatio.w;
-		m_fluidDensity[3] = 600.0*densityRatio.w;
-		m_fluidVisc[3] =  particleVisc*viscRatio.w;
-	}
-	
-	//Allocate buffer and setup the kernels and spacing
-	AllocateParticles ( m_Param[PNUM] );
-	AllocatePackBuf ();
-	SetupKernels ();
-	SetupSpacing ();
-
-	//Add fluid particles
-	if (loadwhich == 0)
-	{
-		switch(example){
-		case 1:
-			m_Vec [ PINITMIN ].Set (volumes[0].x,volumes[0].y,volumes[0].z);
-			m_Vec [ PINITMAX ].Set (volumes[1].x,volumes[1].y,volumes[1].z);
-			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),0);
-
-			m_Vec [ PINITMIN ].Set (volumes[2].x,volumes[2].y,volumes[2].z);
-			m_Vec [ PINITMAX ].Set (volumes[3].x,volumes[3].y,volumes[3].z);
-			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),1);
-
-			m_Vec [ PINITMIN ].Set (volumes[4].x,volumes[4].y,volumes[4].z);
-			m_Vec [ PINITMAX ].Set (volumes[5].x,volumes[5].y,volumes[5].z);
-			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
-			break;
-		case 11:
-			m_Vec [ PINITMIN ].Set (volumes[0].x,volumes[0].y,volumes[0].z);
-			m_Vec [ PINITMAX ].Set (volumes[1].x,volumes[1].y,volumes[1].z);
-			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),0);
-
-			m_Vec [ PINITMIN ].Set (volumes[2].x,volumes[2].y,volumes[2].z);
-			m_Vec [ PINITMAX ].Set (volumes[3].x,volumes[3].y,volumes[3].z);
-			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),1);
-
-			m_Vec [ PINITMIN ].Set (volumes[4].x,volumes[4].y,volumes[4].z);
-			m_Vec [ PINITMAX ].Set (volumes[5].x,volumes[5].y,volumes[5].z);
-			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
-			break;
-		case 12:
-			m_Vec [ PINITMIN ].Set (volumes[0].x,volumes[0].y,volumes[0].z);
-			m_Vec [ PINITMAX ].Set (volumes[1].x,volumes[1].y,volumes[1].z);
-			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),0);
-
-			m_Vec [ PINITMIN ].Set (volumes[2].x,volumes[2].y,volumes[2].z);
-			m_Vec [ PINITMAX ].Set (volumes[3].x,volumes[3].y,volumes[3].z);
-			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),1);
-
-			m_Vec [ PINITMIN ].Set (volumes[4].x,volumes[4].y,volumes[4].z);
-			m_Vec [ PINITMAX ].Set (volumes[5].x,volumes[5].y,volumes[5].z);
-			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
-			break;
-		}
-	}
-	else{ //load from file
-		switch(example){
-		case 2:
-			mMaxPoints = loadParticle(".\\save\\save_stat2.txt");
-			break;
-		case 3:
-			mMaxPoints  = loadParticle(".\\save\\save_stat3.txt");
-			break;
-		case 5:
-			mMaxPoints  = loadParticle(".\\save\\save_stat5.txt");
-			//mMaxPoints += 32767*scaleP;
-			break;
-		}
-	}
-
-	//Add particles of boundary or extra models
-
-	switch(example){
-#ifdef NEW_BOUND
-	case 1:
-		//mMaxPoints += bi2readers[0]->info.nbound;
-		//SetupAddBound(*bi2readers[0],1);
-		break;
-	case 12:
-		//mMaxPoints += bi2readers[0]->info.nbound;
-		SetupAddBound(*bi2readers[0],1);
-		break;
-#endif
-	case 2:
-		//mMaxPoints += bi2readers[0]->info.np;
-		SetupAddShape(*bi2readers[0],1);
-		break;
-	}
-	m_maxAllowedPoints = mNumPoints * EMIT_BUF_RATIO;
-
-	//set emit parametres
-	if(example==5){
-		m_maxAllowedPoints += 32767*scaleP;
-		m_Vec[PEMIT_RATE] = Vector3DF(5,256,25);
-		m_Vec[PEMIT_SPREAD] = Vector3DF(0,0,0);
-		m_Vec[PEMIT_ANG] = Vector3DF(0,135,2);
-		m_Vec[PEMIT_POS] = Vector3DF(0,60,0);
-	}
-	else{
-		//Emit Params
-		m_Vec[PEMIT_RATE] = Vector3DF(1.1,9,0);
-		m_Vec[PEMIT_SPREAD] = Vector3DF(0,0,0);
-		m_Vec[PEMIT_ANG] = Vector3DF(0,180,1);
-		m_Vec[PEMIT_POS] = Vector3DF(0,60,30);
-	}
-}
+//void FluidSystem::MfTestSetupExample ()
+//{
+//	example= _example;
+//	m_Param[PEXAMPLE] = example;
+//	printf("here we have example %d\n",example);
+//	ParseXML_Bound("BoundInfo",example);
+//
+//	//load boundary and special models
+//
+//	BI2Reader* bi2readers[10]; //ten pointers to build bi2reader dynamically, in use now
+//	char biname[200];
+//	switch(example){
+//#ifdef NEW_BOUND
+//	case 1:
+//		sprintf(biname,".\\extra_particles\\Boundary1.bi2");
+//		bi2readers[0] = new BI2Reader(biname);
+//		bi2readers[0]->GetInfo(false);
+//		bi2readers[0]->PrintInfo();
+//		break;
+//	case 12:
+//		sprintf(biname,".\\extra_particles\\Boundary12.bi2");
+//		bi2readers[0] = new BI2Reader(biname);
+//		bi2readers[0]->GetInfo(false);
+//		bi2readers[0]->PrintInfo();
+//		break;
+//#endif
+//	case 2:
+//		sprintf(biname,".\\extra_particles\\monster2.bi2");
+//		bi2readers[0] = new BI2Reader(biname);
+//		bi2readers[0]->GetInfo(false);
+//		bi2readers[0]->PrintInfo();
+//		break;
+//	}
+//	double particleVisc =  m_Param[PVISC];
+//
+//	//parse the xml and adjust some parameters according to scaleP
+//	ParseMFXML ( "MultiScene", example, true );
+//	
+//
+//	//adjust the parametres according to the scale parameter
+//	scaleP3 = pow(scaleP,1.0/3.0);
+//	m_Param[PMASS]/=scaleP;
+//#ifdef NEW_BOUND
+//	m_Param[PBMASS]/=scaleP;
+//#endif
+//	m_Param[PSMOOTHRADIUS]/=scaleP3;
+//	m_Param[PRADIUS]/=scaleP3;
+//	m_Param [PNUM]*=scaleP;
+//
+//	//Add the number of boundary or monster to PNUM
+//	switch(example){
+//#ifdef NEW_BOUND
+//	case 1:
+//		m_Param[PNUM] += bi2readers[0]->info.nbound; //boundary particles
+//		break;
+//	case 12:
+//		m_Param[PNUM] += bi2readers[0]->info.nbound; //boundary particles
+//		break;
+//	case 2:
+//		m_Param[PNUM] += bi2readers[0]->info.nbound;//monster
+//		break;
+//	}
+//#endif
+//	m_Param [PGRIDSIZE] = 2*m_Param[PSMOOTHRADIUS] / m_Param[PGRID_DENSITY];
+//	
+//	m_fluidPMass[0] = m_Param[PMASS]*massRatio.x;
+//	m_fluidPMass[1] = m_Param[PMASS]*massRatio.y;
+//	m_fluidPMass[2] = m_Param[PMASS]*massRatio.z;
+//	m_fluidDensity[0] = 600.0*densityRatio.x;
+//	m_fluidDensity[1] = 600.0*densityRatio.y;
+//	m_fluidDensity[2] = 600.0*densityRatio.z;
+//	m_fluidVisc[0] =  particleVisc*viscRatio.x;
+//	m_fluidVisc[1] =  particleVisc*viscRatio.y;
+//	m_fluidVisc[2] =  particleVisc*viscRatio.z;
+//	if(m_Param[FLUID_CATNUM]>3){
+//		m_fluidPMass[3] = m_Param[PMASS]*massRatio.w;
+//		m_fluidDensity[3] = 600.0*densityRatio.w;
+//		m_fluidVisc[3] =  particleVisc*viscRatio.w;
+//	}
+//	
+//	//Allocate buffer and setup the kernels and spacing
+//	AllocateParticles ( m_Param[PNUM] );
+//	AllocatePackBuf ();
+//	SetupKernels ();
+//	SetupSpacing ();
+//
+//	//Add fluid particles
+//	if (loadwhich == 0)
+//	{
+//		switch(example){
+//		case 1:
+//			m_Vec [ PINITMIN ].Set (volumes[0].x,volumes[0].y,volumes[0].z);
+//			m_Vec [ PINITMAX ].Set (volumes[1].x,volumes[1].y,volumes[1].z);
+//			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),0);
+//
+//			m_Vec [ PINITMIN ].Set (volumes[2].x,volumes[2].y,volumes[2].z);
+//			m_Vec [ PINITMAX ].Set (volumes[3].x,volumes[3].y,volumes[3].z);
+//			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),1);
+//
+//			m_Vec [ PINITMIN ].Set (volumes[4].x,volumes[4].y,volumes[4].z);
+//			m_Vec [ PINITMAX ].Set (volumes[5].x,volumes[5].y,volumes[5].z);
+//			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
+//			break;
+//		case 11:
+//			m_Vec [ PINITMIN ].Set (volumes[0].x,volumes[0].y,volumes[0].z);
+//			m_Vec [ PINITMAX ].Set (volumes[1].x,volumes[1].y,volumes[1].z);
+//			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),0);
+//
+//			m_Vec [ PINITMIN ].Set (volumes[2].x,volumes[2].y,volumes[2].z);
+//			m_Vec [ PINITMAX ].Set (volumes[3].x,volumes[3].y,volumes[3].z);
+//			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),1);
+//
+//			m_Vec [ PINITMIN ].Set (volumes[4].x,volumes[4].y,volumes[4].z);
+//			m_Vec [ PINITMAX ].Set (volumes[5].x,volumes[5].y,volumes[5].z);
+//			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
+//			break;
+//		case 12:
+//			m_Vec [ PINITMIN ].Set (volumes[0].x,volumes[0].y,volumes[0].z);
+//			m_Vec [ PINITMAX ].Set (volumes[1].x,volumes[1].y,volumes[1].z);
+//			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),0);
+//
+//			m_Vec [ PINITMIN ].Set (volumes[2].x,volumes[2].y,volumes[2].z);
+//			m_Vec [ PINITMAX ].Set (volumes[3].x,volumes[3].y,volumes[3].z);
+//			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),1);
+//
+//			m_Vec [ PINITMIN ].Set (volumes[4].x,volumes[4].y,volumes[4].z);
+//			m_Vec [ PINITMAX ].Set (volumes[5].x,volumes[5].y,volumes[5].z);
+//			SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
+//			break;
+//		}
+//	}
+//	else{ //load from file
+//		switch(example){
+//		case 2:
+//			mMaxPoints = loadParticle(".\\save\\save_stat2.txt");
+//			break;
+//		case 3:
+//			mMaxPoints  = loadParticle(".\\save\\save_stat3.txt");
+//			break;
+//		case 5:
+//			mMaxPoints  = loadParticle(".\\save\\save_stat5.txt");
+//			//mMaxPoints += 32767*scaleP;
+//			break;
+//		}
+//	}
+//
+//	//Add particles of boundary or extra models
+//
+//	switch(example){
+//#ifdef NEW_BOUND
+//	case 1:
+//		//mMaxPoints += bi2readers[0]->info.nbound;
+//		//SetupAddBound(*bi2readers[0],1);
+//		break;
+//	case 12:
+//		//mMaxPoints += bi2readers[0]->info.nbound;
+//		SetupAddBound(*bi2readers[0],1);
+//		break;
+//#endif
+//	case 2:
+//		//mMaxPoints += bi2readers[0]->info.np;
+//		SetupAddShape(*bi2readers[0],1);
+//		break;
+//	}
+//	m_maxAllowedPoints = mNumPoints * EMIT_BUF_RATIO;
+//
+//	//set emit parametres
+//	if(example==5){
+//		m_maxAllowedPoints += 32767*scaleP;
+//		m_Vec[PEMIT_RATE] = Vector3DF(5,256,25);
+//		m_Vec[PEMIT_SPREAD] = Vector3DF(0,0,0);
+//		m_Vec[PEMIT_ANG] = Vector3DF(0,135,2);
+//		m_Vec[PEMIT_POS] = Vector3DF(0,60,0);
+//	}
+//	else{
+//		//Emit Params
+//		m_Vec[PEMIT_RATE] = Vector3DF(1.1,9,0);
+//		m_Vec[PEMIT_SPREAD] = Vector3DF(0,0,0);
+//		m_Vec[PEMIT_ANG] = Vector3DF(0,180,1);
+//		m_Vec[PEMIT_POS] = Vector3DF(0,60,30);
+//	}
+//}
 
 void FluidSystem::SetupAddShape(BI2Reader bi2reader,int cat)
 {
@@ -2473,7 +2603,7 @@ void FluidSystem::setupSPHexample()
 
 	//adjust the parametres according to the scale parameter
 	scaleP3 = pow(scaleP,1.0/3.0);
-	m_Param[PNUM] = 40000;
+	m_Param[PNUM] = 80000;
 	m_Param[PMASS]/=scaleP;
 	m_Param[PBMASS]/=scaleP;
 	m_Param[PSMOOTHRADIUS]/=scaleP3;
@@ -2481,7 +2611,7 @@ void FluidSystem::setupSPHexample()
 	printf("scale P is %f, pnum is %d\n", scaleP, m_Param[PNUM]);
 	m_Param [PNUM]*=scaleP;
 	//m_Param[PNUM] += bi2readers[0]->info.nbound;
-	m_Param[PNUM] += bi2readers[1]->info.nbound;
+	//m_Param[PNUM] += bi2readers[1]->info.nbound;
 
 	m_Param [PGRIDSIZE] = 2*m_Param[PSMOOTHRADIUS] / m_Param[PGRID_DENSITY];
 	
@@ -2497,14 +2627,14 @@ void FluidSystem::setupSPHexample()
 	m_Permeability[0] = m_Param[PERMEABILITY] *permeabilityRatio.x;
 	m_Permeability[1] = m_Param[PERMEABILITY] *permeabilityRatio.y;
 	m_Permeability[2] = m_Param[PERMEABILITY] *permeabilityRatio.z;
-
+	pressureRatio[0] = pressRatio.x;
+	pressureRatio[1] = pressRatio.y;
+	pressureRatio[2] = pressRatio.z;
+	
 	AllocateParticles ( m_Param[PNUM] );
 	AllocatePackBuf ();
 	SetupKernels ();
 	SetupSpacing ();
-
-	//if(m_Param[FLUID_CATNUM]<0.5)
-	//loadParticle(".\\save_stat.txt");
 	
 	m_Vec [ PINITMIN ].Set (volumes[0].x,volumes[0].y,volumes[0].z);
 	m_Vec [ PINITMAX ].Set (volumes[1].x,volumes[1].y,volumes[1].z);
@@ -2514,10 +2644,27 @@ void FluidSystem::setupSPHexample()
 	//NumPointsNoBound = SetupAddMonster(*bi2readers[1], 0, 1);
 	
 	//LoadParticles(".\\extra_particles\\armadillo.txt");
-	LoadParticles(".\\extra_particles\\bunny.txt");
+	//std::cout << "spacing is " << m_Param[PSPACING] <<", volume is "<< volumes[0].x <<" "<< volumes[0].y <<" " << volumes[0].z << std::endl;
+	//LoadParticles(".\\extra_particles\\bunny.txt");
+	
+	switch(example)
+	{
+	case 4:
+		numElasticPoints = 0;
+		NumPointsNoBound = SetupMfAddGridSolid(m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0, 0, 0), 0);
+		break;
+	case 11:
+		numElasticPoints = 0;
+		NumPointsNoBound = SetupMfAddSolidSolid(m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0, 0, 0), 0);
+		break;
+	default:
+		LoadParticles(".\\extra_particles\\rubbertoy_hou.txt", Vector3DF(-20, 20, 20));
+		NumPointsNoBound = numElasticPoints;
+	}
+
 	//solveModel();
 	//storeModel("bunny.txt");
-	NumPointsNoBound = numElasticPoints;
+	
 	//numElasticPoints = SetupMfAddCylinder ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),0);
 	//SetupMfAddDeformVolume
 	m_Vec [ PINITMIN ].Set (volumes[2].x,volumes[2].y,volumes[2].z);
@@ -2526,7 +2673,7 @@ void FluidSystem::setupSPHexample()
 	
 	m_Vec [ PINITMIN ].Set (volumes[4].x,volumes[4].y,volumes[4].z);
 	m_Vec [ PINITMAX ].Set (volumes[5].x,volumes[5].y,volumes[5].z);
-	//SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
+	NumPointsNoBound += SetupMfAddVolume ( m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0,0.1,0),2);
 	
 	m_Vec [ PINITMIN ].Set (softBoundary[0].x, softBoundary[0].y, softBoundary[0].z);
 	m_Vec [ PINITMAX ].Set (softBoundary[1].x, softBoundary[1].y, softBoundary[1].z);
@@ -2534,5 +2681,4 @@ void FluidSystem::setupSPHexample()
 	
 	//SetupAddBound(*bi2readers[0],1);
 	m_maxAllowedPoints = mNumPoints * EMIT_BUF_RATIO;
-
 }

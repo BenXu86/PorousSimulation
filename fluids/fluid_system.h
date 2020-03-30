@@ -151,6 +151,7 @@
 	#define HIDEBOUND			14
 	#define HIDEFLUID			15
 	#define HIDESOLID			16
+    #define HIDERIGID			17
 	//From YanXiao
 	#define OUTPUT_INT			1
 	#define START_OUTPUT		2
@@ -229,6 +230,8 @@
 
 		void ParseMFXML ( std::string name, int id, bool bStart );
 		int SetupMfAddVolume( Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int cat);// cat: category label
+		int SetupMfAddGridSolid(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
+		int SetupMfAddSolidSolid(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 		int SetupMfAddCylinder(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 		void SetupBoundary(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 
@@ -322,7 +325,7 @@
 
 		void storeModel(char* filename);
 
-		void LoadParticles(char* filename);
+		void LoadParticles(char* filename, Vector3DF off);
 		void solveModel();
 	private:
 
@@ -441,7 +444,7 @@
 		//float					m_splitVolume;
 		//float					m_mergeVolume;
 		float					m_Permeability[MAX_FLUIDNUM];
-
+		float					pressureRatio[MAX_FLUIDNUM];
 
 		double vfactor, fpfactor, spfactor;
 		double bdamp;
@@ -461,6 +464,7 @@
 		float*					porosity_particle;
 		Vector3DF*				signDistance;//distance between solid particle to surface
 		float					poroDeformStrength;
+		float					capillary;
 		//bool*					misGhost;
 	};	
 #endif

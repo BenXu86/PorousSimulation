@@ -12,7 +12,7 @@
 
 #ifndef simple_sph
 #define simple_sph
-#define _example 1
+#define _example 4
 #define MAX_FLUIDNUM 3
 #endif
 

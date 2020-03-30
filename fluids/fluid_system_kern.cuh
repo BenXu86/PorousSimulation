@@ -51,10 +51,12 @@
 		//multi fluid
 		float*			mf_alpha;				// MAX_FLUIDNUM * 4 bytes for each particle
 		float*			mf_alpha_next;			// MAX_FLUIDNUM * 4 bytes for each particle
-		float*			mf_pressure_modify;	//  4 bytes for each particle
+		//float*			mf_pressure_modify;	//  4 bytes for each particle
 		float3*			mf_vel_phrel;			// MAX_FLUIDNUM * 12 bytes for each particle  u_mk
 		float*			mf_restmass;		//参数simData.pmass
 		float*			mf_restdensity;
+		float*			mf_restdensity_out;
+		float*			mf_alpha_sum;
 		float*			mf_visc;
 		float3*			mf_velxcor;
 		float3*			mf_alphagrad;			// MAX_FLUIDNUM * 12 bytes for each particle
@@ -110,7 +112,8 @@
 		uint*	isSurface;//0 means internal particles, 1 means surface particle
 		float3* normal;//固体表面的法线方向,指向外部
 		float*	volumetricStrain;
-
+		int*	isHead;//是否为兔子头
+		int*	frame;
 		//IISPH
 		float*			aii;
 		float3*			pressForce;
@@ -138,11 +141,11 @@
 	//multi fluid sort buffer offsets
 	#define BUF_ALPHA		(BUF_ISBOUND + sizeof(int))
 	#define BUF_ALPHAPRE	(BUF_ALPHA + sizeof(float)*MAX_FLUIDNUM)
-	#define BUF_PRESSMODI	(BUF_ALPHAPRE + sizeof(float)*MAX_FLUIDNUM)
-	#define	BUF_VELPHREL	(BUF_PRESSMODI + sizeof(float))
+	#define	BUF_VELPHREL	(BUF_ALPHAPRE + sizeof(float)*MAX_FLUIDNUM)
 	#define BUF_RMASS		(BUF_VELPHREL + sizeof(float3)*MAX_FLUIDNUM)
 	#define BUF_RDENS		(BUF_RMASS + sizeof(float))
-	#define BUF_VISC		(BUF_RDENS + sizeof(float))
+	#define BUF_RDENSOUT	(BUF_RDENS+ sizeof(float))
+	#define BUF_VISC		(BUF_RDENSOUT + sizeof(float))
 	#define BUF_VELXCOR		(BUF_VISC + sizeof(float))
 	#define	BUF_ALPHAGRAD	(BUF_VELXCOR + sizeof(float3))
 	#define BUF_INDICATOR   (BUF_ALPHAGRAD + sizeof(float3)*MAX_FLUIDNUM)
@@ -188,6 +191,7 @@
 		
 		//multi fluid parameters
 		float			mf_dens[MAX_FLUIDNUM];
+		float			mf_mass[MAX_FLUIDNUM];
 		float			mf_visc[MAX_FLUIDNUM];
 		
 		float			mf_diffusion;
@@ -215,16 +219,19 @@
 
 		//porous
 		float			rest_porosity;
+		float			capillary;
 		float			mf_permeability[MAX_FLUIDNUM];
+		float			pressRatio[MAX_FLUIDNUM];
 		float			bulkModulus_porous;
 		float			bulkModulus_grains;
 		float			bulkModulus_solid;
 		float			bulkModulus_fluid;
 		float			CoCompressibility;
 
-		bool			HideBound, HideFluid, HideSolid;
+		bool			HideBound, HideFluid, HideSolid, HideRigid;
 
 		float			poroDeformStrength;
+		//int				m_frame;
 	};
 
 	// Prefix Sum defines - 16 banks on G80
@@ -256,6 +263,7 @@
 	__global__ void mfPreComputeDensity ( bufList buf, int pnum );
 	__global__ void mfComputePressure( bufList buf, int pnum );
 	__global__ void mfComputeDriftVel( bufList buf, int pnum );
+	__global__ void applyAlphaAndBeta(bufList buf, int pnum);
 	__global__ void mfComputeAlphaAdvance( bufList buf, int pnum );
 	__global__ void mfComputeCorrection( bufList buf, int pnum );
 	__global__ void mfComputeForce( bufList buf, int pnum );
@@ -268,9 +276,9 @@
 	__global__ void mfChangeDensity (bufList buf,int pnum,const float scale);
 
 	//calculating functions for project-u
-	__global__ void ComputeForce_projectu( bufList buf, int pnum );
+	//__global__ void ComputeForce_projectu( bufList buf, int pnum );
 
-	__global__ void AddSPHtensorForce(bufList buf,int pnum,float time);
+	//__global__ void AddSPHtensorForce(bufList buf,int pnum,float time);
 	//end calculating functions for project-u
 
 	//An Implicit SPH Formulation for Incompressible Linearly Elastic Solids
