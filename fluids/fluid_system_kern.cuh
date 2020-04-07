@@ -58,8 +58,8 @@
 		float*			mf_restdensity_out;
 		float*			mf_alpha_sum;
 		float*			mf_visc;
-		float3*			mf_velxcor;
-		float3*			mf_alphagrad;			// MAX_FLUIDNUM * 12 bytes for each particle
+		//float3*			mf_velxcor;
+		//float3*			mf_alphagrad;			// MAX_FLUIDNUM * 12 bytes for each particle
 		float*			mf_alphachange;
 		//float*			density_fluid;
 		//multi-fluid porous
@@ -74,7 +74,7 @@
 
 		float3*			gradPressure;
 		float3*			poroVel;
-		float3*			fluidVel;
+		//float3*			fluidVel;
 
 		int*            MFtype;					//0 means liquid,1 means deformation,2 means rigid，3 means fully absorbed liquid
 		//End multi fluid
@@ -108,7 +108,7 @@
 		float3* kernelGrad;
 		float3*	kernelRotate;
 		uint*	neighborIndex;//该粒子在邻居链表中所在的索引
-		float*	colorField;
+		
 		uint*	isSurface;//0 means internal particles, 1 means surface particle
 		float3* normal;//固体表面的法线方向,指向外部
 		float*	volumetricStrain;
@@ -122,44 +122,30 @@
 		float*			rest_volume;
 		float*			volume;
 		float*			source;
-
+		float*			rest_colorValue;
+		float*			colorValue;
+		float*			colorTensor;
 	};// End particle&grid buffers
 
 	// Temporary sort buffer offsets
 	#define BUF_POS			0
-	#define BUF_ACCEL		(sizeof(float3))
-
-	#define BUF_VELEVAL		(BUF_ACCEL + sizeof(float3))
-	#define BUF_FORCE		(BUF_VELEVAL + sizeof(float3))
-	#define BUF_PRESS		(BUF_FORCE + sizeof(float3))
-	#define BUF_DENS		(BUF_PRESS + sizeof(float))
-	#define BUF_GCELL		(BUF_DENS + sizeof(float))
+	#define BUF_GCELL		(sizeof(float3))
 	#define BUF_GNDX		(BUF_GCELL + sizeof(uint))
-	#define BUF_CLR			(BUF_GNDX + sizeof(uint))
-	#define BUF_ISBOUND		(BUF_CLR + sizeof(uint))	
-
+	#define BUF_VELEVAL		(BUF_GNDX + sizeof(uint))
+	#define BUF_PRESS		(BUF_VELEVAL + sizeof(float3))
+	#define BUF_ISBOUND		(BUF_PRESS + sizeof(float))	
 	//multi fluid sort buffer offsets
 	#define BUF_ALPHA		(BUF_ISBOUND + sizeof(int))
 	#define BUF_ALPHAPRE	(BUF_ALPHA + sizeof(float)*MAX_FLUIDNUM)
-	#define	BUF_VELPHREL	(BUF_ALPHAPRE + sizeof(float)*MAX_FLUIDNUM)
-	#define BUF_RMASS		(BUF_VELPHREL + sizeof(float3)*MAX_FLUIDNUM)
-	#define BUF_RDENS		(BUF_RMASS + sizeof(float))
-	#define BUF_RDENSOUT	(BUF_RDENS+ sizeof(float))
-	#define BUF_VISC		(BUF_RDENSOUT + sizeof(float))
-	#define BUF_VELXCOR		(BUF_VISC + sizeof(float))
-	#define	BUF_ALPHAGRAD	(BUF_VELXCOR + sizeof(float3))
-	#define BUF_INDICATOR   (BUF_ALPHAGRAD + sizeof(float3)*MAX_FLUIDNUM)
+	#define BUF_RMASS		(BUF_ALPHAPRE + sizeof(float)*MAX_FLUIDNUM)
+	#define BUF_INDICATOR   (BUF_RMASS + sizeof(float))
 	//implicit SPH formulation for elastic body
-	//#define BUF_GRADDEFORM	(BUF_BORNID+sizeof(int))
 	#define BUF_ELASTICID	(BUF_INDICATOR+sizeof(int))
 	//#define BUF_ROTATION	(BUF_ELASTICID+sizeof(uint))
 	#define BUF_ABSORBEDPERCENT	(BUF_ELASTICID+sizeof(int))
 	#define BUF_BETANEXT	(BUF_ABSORBEDPERCENT + sizeof(float)*MAX_FLUIDNUM)
-
-	//porous
-	#define BUF_FVEL		(BUF_BETANEXT+sizeof(float)*MAX_FLUIDNUM)
-	#define BUF_POROVEL		(BUF_FVEL+sizeof(float3)*MAX_FLUIDNUM)
-	#define BUF_CP			(BUF_POROVEL+sizeof(float3)*MAX_FLUIDNUM)
+	//porous	
+	#define BUF_POROVEL		(BUF_BETANEXT+sizeof(float)*MAX_FLUIDNUM)
 	// Fluid Parameters (stored on both host and device)
 	struct FluidParams {
 		int				numThreads, numBlocks;
@@ -212,6 +198,7 @@
 		float			visc_factor, solid_pfactor, fluid_pfactor;
 		float			bdamp;
 		int				gravityfree;
+		float			stRatio;   //surface tension
 
 		//elastic solids
 		int				maxNeighborNum;
@@ -222,6 +209,7 @@
 		float			capillary;
 		float			mf_permeability[MAX_FLUIDNUM];
 		float			pressRatio[MAX_FLUIDNUM];
+		float			colorValue[MAX_FLUIDNUM];
 		float			bulkModulus_porous;
 		float			bulkModulus_grains;
 		float			bulkModulus_solid;
@@ -294,7 +282,7 @@
 	__global__ void ComputeElasticNormal(bufList buf, int pnum);
 	//porous functions
 	__global__ void AbsorbPercentCorrection(bufList buf, int pnum);
-	__global__ void ComputeSurfaceTension(bufList buf, int pnum);
+	__global__ void ComputeCapillaryForce(bufList buf, int pnum);
 	__global__ void ComputePoroVelocity(bufList buf, int pnum);
 
 	//new method
@@ -322,7 +310,8 @@
 	__global__ void ComputeVolume(bufList buf, int pnum);
 	__global__ void ComputeSource(bufList buf, int pnum);
 	
-
+	__global__ void ComputeColorValue(bufList buf, int pnum);
+	__global__ void ComputeColorTensor(bufList buf, int pnum);
 	#define EPSILON				0.00001f
 	#define GRID_UCHAR			0xFF
 	#define GRID_UNDEF			4294967295

@@ -230,6 +230,7 @@
 
 		void ParseMFXML ( std::string name, int id, bool bStart );
 		int SetupMfAddVolume( Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int cat);// cat: category label
+		int SetupMfAddBlendVolume(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs);// cat: category label
 		int SetupMfAddGridSolid(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 		int SetupMfAddSolidSolid(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 		int SetupMfAddCylinder(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
@@ -445,6 +446,8 @@
 		//float					m_mergeVolume;
 		float					m_Permeability[MAX_FLUIDNUM];
 		float					pressureRatio[MAX_FLUIDNUM];
+		float					restColorValue[MAX_FLUIDNUM];
+		float					SurfaceTensionRatio;
 
 		double vfactor, fpfactor, spfactor;
 		double bdamp;

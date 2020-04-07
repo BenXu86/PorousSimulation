@@ -53,9 +53,9 @@
 	void FluidSetupCUDA (  int num, int gsrch, int3 res, float3 size, float3 delta, float3 gmin, float3 gmax, int total, int chk);
 	void FluidParamCUDA ( float ss, float sr, float pr, float mass, float rest, float3 bmin, float3 bmax, float estiff, float istiff, float pbstiff, float visc, float damp, float fmin, float fmax, float ffreq, float gslope, float gx, float gy, float gz, float al, float vl );
 	void FluidParamCUDA_projectu(float v_factor, float f_factor, float s_factor,float bdamp);
-	void ParamUpdateCUDA(bool hidebound, bool hidefluid,bool hidesolid,bool hiderigid);
+	void ParamUpdateCUDA(bool hidebound, bool hidefluid,bool hidesolid,bool hiderigid, float* colorValue);
 	//elastic information
-	void ElasticSetupCUDA(int num,float miu,float lambda,float porosity,float* permeability,int maxNeighborNum, float* permRatio);
+	void ElasticSetupCUDA(int num,float miu,float lambda,float porosity,float* permeability,int maxNeighborNum, float* permRatio, float stRatio);
 	//porous
 	void PorousParamCUDA(float bulkModulus_porous, float bulkModulus_grains, float bulkModulus_solid, float	bulkModulus_fluid,float poroDeformStrength, float capillary);
 	//multi fluid
