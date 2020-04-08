@@ -281,13 +281,13 @@
 	__global__ void ComputeElasticColorField(bufList buf, int pnum);
 	__global__ void ComputeElasticNormal(bufList buf, int pnum);
 	//porous functions
-	__global__ void AbsorbPercentCorrection(bufList buf, int pnum);
+	//__global__ void AbsorbPercentCorrection(bufList buf, int pnum);
 	__global__ void ComputeCapillaryForce(bufList buf, int pnum);
 	__global__ void ComputePoroVelocity(bufList buf, int pnum);
 
 	//new method
 	__global__ void ComputeFluidAdvance(bufList buf, int pnum);
-	__global__ void ComputePorePressure(bufList buf, int pnum);
+	//__global__ void ComputePorePressure(bufList buf, int pnum);
 	__global__ void ComputeSolidPorePressure(bufList buf, int pnum);
 	__global__ void ComputeDarcyFlux(bufList buf, int pnum);
 	__global__ void ComputeFluidFlux(bufList buf, int pnum);
