@@ -76,7 +76,7 @@
 		float3*			poroVel;
 		//float3*			fluidVel;
 
-		int*            MFtype;					//0 means liquid,1 means deformation,2 means rigid£¬3 means fully absorbed liquid
+		int*            MFtype;					//0 means liquid,1 means boundary,2 means elastic£¬>=3 means rigid
 		//End multi fluid
 
 		//An Implicit SPH Formulation for Incompressible Linearly Elastic Solids
@@ -143,9 +143,9 @@
 	#define BUF_ELASTICID	(BUF_INDICATOR+sizeof(int))
 	//#define BUF_ROTATION	(BUF_ELASTICID+sizeof(uint))
 	#define BUF_ABSORBEDPERCENT	(BUF_ELASTICID+sizeof(int))
-	#define BUF_BETANEXT	(BUF_ABSORBEDPERCENT + sizeof(float)*MAX_FLUIDNUM)
+	#define BUF_BETANEXT	(BUF_ABSORBEDPERCENT + sizeof(float)*MAX_FLUIDNUM*MAX_SOLIDNUM)
 	//porous	
-	#define BUF_POROVEL		(BUF_BETANEXT+sizeof(float)*MAX_FLUIDNUM)
+	//#define BUF_POROVEL		(BUF_BETANEXT+sizeof(float)*MAX_FLUIDNUM)
 	// Fluid Parameters (stored on both host and device)
 	struct FluidParams {
 		int				numThreads, numBlocks;
@@ -191,6 +191,7 @@
 		float			cont,cont1,cont2;
 		int				mf_up;
 		float			relax;
+		float			relax2;
 		int				example;
 		float			by,bxmin,bxmax,bzmin,bzmax,pan_r,omega; // for example3 rotation
 		int				loadwhich;
@@ -207,8 +208,9 @@
 		//porous
 		float			rest_porosity;
 		float			capillary;
-		float			mf_permeability[MAX_FLUIDNUM];
-		float			pressRatio[MAX_FLUIDNUM];
+		float			capillaryForceRatio;
+		float			mf_permeability[MAX_FLUIDNUM*MAX_SOLIDNUM];
+		float			pressRatio[MAX_FLUIDNUM*MAX_SOLIDNUM];
 		float			colorValue[MAX_FLUIDNUM];
 		float			bulkModulus_porous;
 		float			bulkModulus_grains;

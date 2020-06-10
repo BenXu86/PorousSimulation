@@ -234,9 +234,12 @@
 		int SetupMfAddGridSolid(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 		int SetupMfAddSolidSolid(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 		int SetupMfAddCylinder(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
-		void SetupBoundary(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
+		int SetupBoundary(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 
 		int SetupMfAddDeformVolume( Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
+		int FluidSystem::SetupMfAddSphere(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
+		int FluidSystem::SetupMfAddMagicWand(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs);
+		
 		int SetupModel(PIC*model, float spacing, int type, Vector3DF displacement);
 		int GenerateBunnies(PIC*bunny, float spacing, int type);
 
@@ -316,7 +319,6 @@
 		bool GetToggle ( int p )			{ return m_Toggle[p]; }
 		std::string		getSceneName ()		{ return mSceneName; }
 
-		
 		//From YanXiao
 		void SetYan (int p, int v)			{ m_Yan[p] = v; }
 		int GetYan (int p)					{ return m_Yan[p]; }
@@ -336,6 +338,7 @@
 		int							m_Frame;		
 		double						m_DT;
 		double						m_Time;	
+		double						m_CostTime;
 
 		// Simulation Parameters
 		double						m_Param [ MAX_PARAM ];			// see defines above
@@ -444,8 +447,8 @@
 		float					m_fluidDiffusion;
 		//float					m_splitVolume;
 		//float					m_mergeVolume;
-		float					m_Permeability[MAX_FLUIDNUM];
-		float					pressureRatio[MAX_FLUIDNUM];
+		float					m_Permeability[MAX_FLUIDNUM*MAX_SOLIDNUM];
+		float					pressureRatio[MAX_FLUIDNUM*MAX_SOLIDNUM];
 		float					restColorValue[MAX_FLUIDNUM];
 		float					SurfaceTensionRatio;
 
@@ -468,6 +471,8 @@
 		Vector3DF*				signDistance;//distance between solid particle to surface
 		float					poroDeformStrength;
 		float					capillary;
+		float					capillaryForceRatio;
+		float					Relax2;
 		//bool*					misGhost;
 	};	
 #endif

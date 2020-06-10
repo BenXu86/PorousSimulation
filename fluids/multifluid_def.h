@@ -12,8 +12,9 @@
 
 #ifndef simple_sph
 #define simple_sph
-#define _example 4
-#define MAX_FLUIDNUM 3
+#define _example 1
+#define MAX_FLUIDNUM 4
+#define MAX_SOLIDNUM 4
 #endif
 
 /*
