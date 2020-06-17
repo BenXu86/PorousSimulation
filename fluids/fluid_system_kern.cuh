@@ -285,6 +285,7 @@
 	//porous functions
 	//__global__ void AbsorbPercentCorrection(bufList buf, int pnum);
 	__global__ void ComputeCapillaryForce(bufList buf, int pnum);
+	__global__ void ComputeInnerBoundaryForce(bufList buf, int pnum);
 	__global__ void ComputePoroVelocity(bufList buf, int pnum);
 
 	//new method

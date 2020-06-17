@@ -1019,7 +1019,7 @@ void PressureSolve(int fluid_beginIndex,int fluid_endIndex)
 		if (abs(averror-last_error)/last_error < 0.001||l>100)
 			break;
 		last_error = averror;
-	} while (l<100 || abs(averror)>eta);
+	} while (l<5 || abs(averror)>eta);
 
 	//printf("iteration time is %d, ave error is %f\n", l, averror);
 	/*PressCorrection << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
@@ -4624,7 +4624,7 @@ __global__ void ComputePoroVelocity(bufList buf, int pnum)
 	float normalize[MAX_SOLIDNUM];// = 0;
 	float3 poroVel[MAX_FLUIDNUM * MAX_SOLIDNUM];
 	float3 advectVel[MAX_FLUIDNUM * MAX_SOLIDNUM];
-	float3 force;
+	float3 force, forcesum = make_float3(0,0,0);
 	float betadensity = 0;
 	float betasum = 0;
 	//buf.poroForce[i] = make_float3(0, 0, 0);
@@ -4662,8 +4662,9 @@ __global__ void ComputePoroVelocity(bufList buf, int pnum)
 				//force = buf.mf_beta[i*MAX_FLUIDNUM + k]*(poroVel[k] - buf.mveleval[i])/simData.mf_dt;
 				force = simData.mf_dens[k] * buf.poroVel[i*simData.mf_catnum*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] - betadensity * buf.mveleval[i];
 				force *= buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM+l] / (simData.mf_dt*buf.mf_restdensity[i]);
-				buf.mforce[i] += force;
-				buf.poroForce[i] += force;
+				//buf.mforce[i] += force;
+				forcesum += force;
+				//buf.poroForce[i] += force;
 				
 			}
 			//if (buf.mf_alpha[i*MAX_FLUIDNUM + 1] > 0.99 && dot(buf.poroForce[i], buf.poroForce[i]) > 1)
@@ -4678,6 +4679,20 @@ __global__ void ComputePoroVelocity(bufList buf, int pnum)
 				buf.poroVel[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] = make_float3(0, 0, 0);
 		}
 	}
+
+	if (isnan(dot(forcesum, forcesum)))
+		printf("particle %d's type is %d, accel is nan\n",
+			i, buf.MFtype[i]);
+	//if (buf.MFtype[i] == 0 && i % 10000 == 0)
+	//	printf("particle %d's mixture vel is (%f,%f,%f), fluid vel is (%f,%f,%f)\n",
+	//		i, buf.mveleval[i].x, buf.mveleval[i].y, buf.mveleval[i].z,
+	//		buf.fluidVel[i*MAX_FLUIDNUM + 1].x, buf.fluidVel[i*MAX_FLUIDNUM + 1].y,
+	//		buf.fluidVel[i*MAX_FLUIDNUM + 1].z);
+	//betasum = forcesum.x*forcesum.x + forcesum.y*forcesum.y + forcesum.z*forcesum.z;
+	//if (betasum > simData.AL2) {
+	//	forcesum *= simData.AL / sqrt(betasum);
+	//}
+	buf.mforce[i] += forcesum;
 }
 
 __device__ void contributeFluidFlux(int i, int cell, bufList buf, float&normalize)
@@ -5051,6 +5066,9 @@ __device__ float3 contributeCapillaryForce(int i, int cell, bufList buf)
 	int cfirst = buf.mgridoff[cell];
 	int clast = cfirst + buf.mgridcnt[cell];
 
+	float kernel, betasum, kparm = 0.007 / pow(simData.psmoothradius, (float)(3.25));
+	//float kernel, betasum, kparm = 8 / (3.1415926*pow(simData.psmoothradius, 3));
+	float q;
 	for (int cndx = cfirst; cndx < clast; cndx++)
 	{
 		j = buf.mgrid[cndx];
@@ -5058,18 +5076,36 @@ __device__ float3 contributeCapillaryForce(int i, int cell, bufList buf)
 		{
 			dist = (buf.mpos[i] - buf.mpos[j])*simData.psimscale;		// dist in cm
 			dsq = (dist.x*dist.x + dist.y*dist.y + dist.z*dist.z);
+
+	/*		q = sqrt(dsq / r2);
+			if (q > 1)
+				continue;
+			if (q <= 0.5)
+				kernel = 1 + 6 * (q*q*q - q*q);
+			else
+				kernel = 2 * pow(1 - q, 3);*/
+
+			//sum += -betasum * buf.mf_restdensity[i] * buf.density_solid[j] * dist / dsq;
+
 			if (!(dsq < r2 && dsq > 0))
 				continue;
 			dsq = sqrt(dsq);
-			//jndex = buf.elasticID[j];
+			if (2 * dsq > simData.psmoothradius)
+				continue;
 			c = simData.psmoothradius - dsq;
-			//cmterm = buf.mf_restmass[j] * buf.density_solid[j] * c*c / dsq*simData.spikykern;
-			//else
-			//	cmterm = buf.mf_restmass[j] * buf.mdensity[j] * c*c / dsq*simData.spikykern;
-			//sum += cmterm * dot(dist, normal);
-			pmterm = buf.mf_restmass[j] * c*c / dsq*simData.spikykern * dist;
+			betasum = 0;
 			for (int k = 1; k < simData.mf_catnum; ++k)
-				sum += buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[j] - 2] * pmterm;
+				betasum += buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[j] - 2];
+			//sum += betasum * buf.mf_restmass[j] * c*c *simData.spikykern * dist / dsq;
+				//betasum += buf.mf_alpha[i*MAX_FLUIDNUM + k] * simData.mf_dens[k];
+			//betasum = 1;
+
+			kernel = pow((float)(2 * dsq - 4 * dsq*dsq / simData.psmoothradius), (float)0.25);
+			//kernel = sqrt(sqrt(6 * dsq - 2 * simData.psmoothradius - 4 * dsq*dsq / simData.psmoothradius));
+			kernel *= kparm;
+			sum += -betasum * buf.mf_restdensity[i] * buf.density_solid[j] * dist/dsq * kernel;
+
+
 		}
 	}
 	return sum;
@@ -5093,10 +5129,104 @@ __global__ void ComputeCapillaryForce(bufList buf, int pnum)
 	{
 		normal += simData.capillaryForceRatio * contributeCapillaryForce(i, gc + simData.gridAdj[c], buf);
 	}
+
+	//if ( isnan(dot(normal, normal)) || dot(normal,normal) > 10)
+	//	printf("capillary force is (%f,%f,%f)\n", normal.x, normal.y, normal.z);
+	//colorField = dot(normal, normal);
+	//if (colorField > simData.AL2) {
+	//	normal *= simData.AL / sqrt(colorField);
+	//}
 	buf.mforce[i] += normal;
 	buf.poroForce[i] += normal;
 	buf.maccel[i] = buf.mforce[i];
 	
+}
+__device__ float3 contributeInnerBoundaryForce(int i, int cell, bufList buf, float betasum, float kparm)
+{
+	float dsq, c, dsq2;
+	register float d2 = simData.psimscale * simData.psimscale;
+	register float r2 = simData.r2;
+
+	float3 dist;
+	float cmterm;
+	float3 pmterm;
+	int j, jndex;
+	float3 sum = make_float3(0, 0, 0);
+	if (buf.mgridcnt[cell] == 0) return sum;
+
+	int cfirst = buf.mgridoff[cell];
+	int clast = cfirst + buf.mgridcnt[cell];
+
+	for (int cndx = cfirst; cndx < clast; cndx++)
+	{
+		j = buf.mgrid[cndx];
+		if (buf.MFtype[j] == 1)
+		{
+			dist = (buf.mpos[i] - buf.mpos[j])*simData.psimscale;		// dist in cm
+			dsq2 = (dist.x*dist.x + dist.y*dist.y + dist.z*dist.z);
+			if (!(dsq2 < r2 && dsq2 > 0))
+				continue;
+			dsq = sqrt(dsq2);
+			if (2 * dsq > simData.psmoothradius)
+				continue;
+			cmterm = 0.5*buf.mf_visc[i]*simData.psmoothradius*buf.mdensity[i];
+			cmterm *= (max((float)0, dot(dist, -buf.mveleval[i]))) / (0.01*r2 + dsq2)*buf.density_solid[j];
+
+			//c = (simData.psmoothradius - dsq);
+			//if (buf.MFtype[i] == 1)
+			//cmterm *= c*c*simData.spikykern;
+			//if (2 * dsq - 4 * dsq2 / simData.psmoothradius < 0)
+			//	continue;
+			cmterm *= kparm*pow(2 * dsq - 4 * dsq2 / simData.psmoothradius, (float)0.25);
+			if (isnan(cmterm))
+				continue;
+			sum += betasum*cmterm * dist / dsq;
+
+		}
+	}
+	return sum;
+}
+__global__ void ComputeInnerBoundaryForce(bufList buf, int pnum)
+{
+	uint i = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;	// particle index				
+	if (i >= pnum)
+		return;
+	if (buf.MFtype[i] != 0)
+		return;
+
+	// Get search cell
+	int nadj = (1 * simData.gridRes.z + 1)*simData.gridRes.x + 1;
+	uint gc = buf.mgcell[i];
+	if (gc == GRID_UNDEF) return;						// particle out-of-range
+	gc -= nadj;
+	float colorField = 0;
+	float betasum = 0;
+	for (int k = 1; k < simData.mf_catnum; ++k)
+		for(int l=1;l<=3;++l)
+			betasum += buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l];
+	//betasum = 1;
+	if (betasum < 0.001)
+		return;
+	float kparm = 0.007 / pow(simData.psmoothradius, (float)(3.25));
+	//printf("beta sum%f\n", betasum);
+	float3 normal = make_float3(0, 0, 0);
+	for (int c = 0; c < simData.gridAdjCnt; c++)
+	{
+		normal +=  simData.stRatio*contributeInnerBoundaryForce(i, gc + simData.gridAdj[c], buf, betasum, kparm);
+	}
+
+	if (isnan(dot(normal,normal)))
+		printf("capillary force is (%f,%f,%f)\n", normal.x, normal.y, normal.z);
+	//colorField = dot(normal, normal);
+	//if (colorField > simData.AL2) {
+	//	normal *= simData.AL / sqrt(colorField);
+	//}
+	buf.mforce[i] += normal;
+
+	buf.mforce[i] += normal;
+	buf.poroForce[i] += normal;
+	buf.maccel[i] = buf.mforce[i];
+
 }
 __device__ float3 contributeSurfaceTension2(int i, int cell, bufList buf)
 {
@@ -5177,15 +5307,23 @@ void ComputePorousForceCUDA()
 	}
 	cudaThreadSynchronize();
 	
-	//if(fcuda.example == 11)
-	//	ComputeSurfaceTension2 << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
-	//else
 	ComputeCapillaryForce << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
 	error = cudaGetLastError();
 	if (error != cudaSuccess) {
 		fprintf(stderr, "CUDA ERROR: compute surface tension CUDA: %s\n", cudaGetErrorString(error));
 	}
 	cudaThreadSynchronize();
+
+	ComputeInnerBoundaryForce << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
+	error = cudaGetLastError();
+	if (error != cudaSuccess) {
+		fprintf(stderr, "CUDA ERROR: compute surface tension CUDA: %s\n", cudaGetErrorString(error));
+	}
+	cudaThreadSynchronize();
+
+	//if(fcuda.example == 11)
+	//	ComputeSurfaceTension2 << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
+	//else
 
 	//fluid flow between fluids and solid surface
 	ComputeFluidFlux << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
@@ -5433,19 +5571,29 @@ __device__ float3 contributeViscosity(int i, int muli, float idens, float3 pos, 
 				force += vmterm * vmr;
 			if (buf.MFtype[i] == 0)
 			{
-				float fluidsum = 0;
-				for (int k = 1; k < simData.mf_catnum; ++k)
-				{
-					if(buf.mf_alpha[j*MAX_FLUIDNUM + k]+ buf.mf_alpha[i*MAX_FLUIDNUM + k]!=0)
-						fluidsum += buf.mf_alpha[j*MAX_FLUIDNUM + k]* buf.mf_alpha[i*MAX_FLUIDNUM + k]
-							/(buf.mf_alpha[j*MAX_FLUIDNUM + k]+ buf.mf_alpha[i*MAX_FLUIDNUM + k]);
-				}
-				force += fluidsum * vmterm * vmr;
+				float fluidsum = buf.mf_alpha_sum[i] * buf.mf_alpha_sum[j];
+				if (fluidsum <= 0.001)
+					fluidsum = 0;
+				else
+					fluidsum /= (buf.mf_alpha_sum[i]+ buf.mf_alpha_sum[j]);
+				float fluidsum2 = (1- buf.mf_alpha_sum[i])*(1- buf.mf_alpha_sum[j]);
+				if (fluidsum2 <= 0.001)
+					fluidsum2 = 0;
+				else
+					fluidsum2 /= (2-buf.mf_alpha_sum[i] - buf.mf_alpha_sum[j]);
+				//for (int k = 1; k < simData.mf_catnum; ++k)
+				//{
+				//	if(buf.mf_alpha[j*MAX_FLUIDNUM + k]+ buf.mf_alpha[i*MAX_FLUIDNUM + k]!=0)
+				//		fluidsum += buf.mf_alpha[j*MAX_FLUIDNUM + k]* buf.mf_alpha[i*MAX_FLUIDNUM + k]
+				//			/(buf.mf_alpha[j*MAX_FLUIDNUM + k]+ buf.mf_alpha[i*MAX_FLUIDNUM + k]);
+				//}
+
+				force += (fluidsum + fluidsum2) * vmterm * vmr;
 				//float buffer[9];
 				//for (int k = 0; k < 9; ++k)
 				//	buffer[k] = buf.colorTensor[i * 9 + k] + buf.colorTensor[j * 9 + k];
 				//force += 1 / buf.mf_restmass[i] * multiply_mv3(buffer, dist)* c * c / dsq * simData.spikykern;
-				force += simData.stRatio * dist / dsq * simData.spikykern *c*c*buf.mf_restmass[j]/buf.mf_restmass[i];
+				//force += simData.stRatio * dist / dsq * simData.spikykern *c*c*buf.mf_restmass[j]/buf.mf_restmass[i];
 			}
 		}
 		if (buf.misbound[j] != 1)
@@ -5497,7 +5645,7 @@ __global__ void ComputeOtherForce(bufList buf, int pnum, float time)
 
 	//bound force and gravity
 	//buf.mforce[i] += getBoundForce(i, buf, force, time);
-	buf.mforce[i] = force;
+	buf.mforce[i] += force;
 	buf.fluidForce[i] = force;
 	buf.maccel[i] = buf.mforce[i];
 	/*if (buf.MFtype[i] == 0)

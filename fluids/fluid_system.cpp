@@ -147,7 +147,7 @@ void FluidSystem::Setup ( bool bStart )
 	printf("max-allowed particle number is %d\n", m_maxAllowedPoints);
 	printf("particle num:%d\n", NumPoints());
 	printf("elastic num:%d\n", numElasticPoints);
-	printf("spacing is %f, smooth radius is %f\n", m_Param[PSPACING]*m_Param[PSIMSCALE], m_Param[PSMOOTHRADIUS]);
+	printf("spacing is %f, smooth radius is %f\n", m_Param[PSPACING], m_Param[PSMOOTHRADIUS]/ m_Param[PSIMSCALE]);
 	SetupGridAllocate ( m_Vec[PVOLMIN], m_Vec[PVOLMAX], m_Param[PSIMSCALE], m_Param[PGRIDSIZE], 1.0 );	// Setup grid
 
 	FluidClearCUDA ();
@@ -1846,7 +1846,7 @@ int FluidSystem::SetupMfAddGridSolid(Vector3DF min, Vector3DF max, float spacing
 	int cntx, cnty, cntz;
 	cntx = ceil((max.x - min.x - offs.x) / spacing);
 	cntz = ceil((max.z - min.z - offs.z) / spacing);
-	int holeSize1 = 5, holeSize2 = 4;//10*spacing as size
+	int holeSize1 = 4, holeSize2 = 4;//10*spacing as size
 	int cnt = cntx * cntz;
 	int xp, yp, zp, c2;
 	float odd;
@@ -1876,13 +1876,13 @@ int FluidSystem::SetupMfAddGridSolid(Vector3DF min, Vector3DF max, float spacing
 			//zindex = ceil((z - min.z - offs.z) / spacing);
 			xindex = xz%cntx;
 			zindex = xz / cntx;
-			if (!((xindex + type) % holeSize1 == 0 || (zindex + type) % holeSize2 == 0))
+			if (!((xindex +type) % holeSize1 == 0 || (zindex +type) % holeSize2 == 0))
 			//if (!((xindex) % holeSize1 == 0 || (zindex) % holeSize2 == 0))
 			{
 				distance1 = min(x - min.x, z - min.z);
 				distance1 = min(max.x - x, distance1);
 				distance1 = min(max.z - z, distance1);
-				if (distance1 >  0.6*spacing)
+				if (distance1 >  0.9*spacing)
 					continue;
 			}
 			//if (pow(x - xcenter, 2) + pow(z - zcenter, 2) < radius)
@@ -2004,7 +2004,7 @@ int FluidSystem::SetupBoundary(Vector3DF min, Vector3DF max, float spacing, Vect
 			distance3 = min(distance3, distance2);
 			//distance1 = max.y - y;
 			//distance3 = min(distance3, distance1);
-			if (distance3 >  4*spacing)
+			if (distance3 >  1.8*spacing)
 				continue;
 			/*if ( xy < c2 ) {
 			zp = xy / int(dx);
@@ -2972,7 +2972,7 @@ setupSPHexample()
 
 	m_Vec [ PINITMIN ].Set (softBoundary[0].x, softBoundary[0].y, softBoundary[0].z);
 	m_Vec [ PINITMAX ].Set (softBoundary[1].x, softBoundary[1].y, softBoundary[1].z);
-	boundaryNum = SetupBoundary(m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0, 0.1, 0), 1);
+	boundaryNum = SetupBoundary(m_Vec[PINITMIN], m_Vec[PINITMAX], m_Param[PSPACING], Vector3DF(0, 0, 0), 1);
 	printf("liquid num is %d, solid num is %d, boundary num is %d\n", liquidNum, solidNum, boundaryNum);
 	m_maxAllowedPoints = mNumPoints * EMIT_BUF_RATIO;
 }
