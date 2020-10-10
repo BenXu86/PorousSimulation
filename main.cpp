@@ -390,6 +390,7 @@ void keyboard_func ( unsigned char key, int x, int y )
 	case 'R': case 'r': {
 		if (psys.GetYan(START_OUTPUT) == 0)
 			psys.SetYan(START_OUTPUT, 1);
+		psys.recordNum = 0;
 		//psys.StartRecord ();
 		} break;
 	//case 'P': case 'p': 	

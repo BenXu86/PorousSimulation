@@ -70,10 +70,12 @@
 		float*			pressure_water;
 		int*			solidCount;
 		float*			totalDis;
+		float3*			mf_vel_inphrel; //u_mk of phase k
 		//float*			capillaryPotentials;
 
 		float3*			gradPressure;
-		float3*			poroVel;
+		float3*			poroVel;//poro vel of next time step
+		float3*			poroVel2;//poro vel of this time step
 		//float3*			fluidVel;
 
 		int*            MFtype;					//0 means liquid,1 means boundary,2 means elastic，>=3 means rigid
@@ -97,7 +99,7 @@
 		//End sorting
 		
 		float*			divDarcyFlux;
-		float3*			SurfaceForce;
+		float3*			BetaMixVel;
 		bool*			isInside;//判断是否在固体内部
 		//elastic material
 		uint*	particleID;
@@ -112,7 +114,7 @@
 		uint*	isSurface;//0 means internal particles, 1 means surface particle
 		float3* normal;//固体表面的法线方向,指向外部
 		float*	volumetricStrain;
-		int*	isHead;//是否为兔子头
+		
 		int*	frame;
 		//IISPH
 		float*			aii;
@@ -142,8 +144,9 @@
 	//implicit SPH formulation for elastic body
 	#define BUF_ELASTICID	(BUF_INDICATOR+sizeof(int))
 	//#define BUF_ROTATION	(BUF_ELASTICID+sizeof(uint))
-	#define BUF_ABSORBEDPERCENT	(BUF_ELASTICID+sizeof(int))
-	#define BUF_BETANEXT	(BUF_ABSORBEDPERCENT + sizeof(float)*MAX_FLUIDNUM*MAX_SOLIDNUM)
+	#define BUF_BETA	(BUF_ELASTICID+sizeof(int))
+	#define BUF_BETANEXT	(BUF_BETA + sizeof(float)*MAX_FLUIDNUM*MAX_SOLIDNUM)
+	#define BUF_POROVEL		(BUF_BETANEXT + sizeof(float)*MAX_FLUIDNUM*MAX_SOLIDNUM)
 	//porous	
 	//#define BUF_POROVEL		(BUF_BETANEXT+sizeof(float)*MAX_FLUIDNUM)
 	// Fluid Parameters (stored on both host and device)
@@ -168,6 +171,7 @@
 		float			poly6kern, spikykern, lapkern;
 		float			CubicSplineKern1, CubicSplineKern2;
 		float			gradCubicSplineKern1, gradCubicSplineKern2;
+		float			CubicSplineKern, gradCubicSplineKern;
 
 		float3			gridSize, gridDelta, gridMin, gridMax;
 		int3			gridRes, gridScanMax;
@@ -253,6 +257,7 @@
 	__global__ void mfPreComputeDensity ( bufList buf, int pnum );
 	__global__ void mfComputePressure( bufList buf, int pnum );
 	__global__ void mfComputeDriftVel( bufList buf, int pnum );
+	__global__ void mfComputeTDM(bufList buf, int pnum);
 	__global__ void applyAlphaAndBeta(bufList buf, int pnum);
 	__global__ void mfComputeAlphaAdvance( bufList buf, int pnum );
 	__global__ void mfComputeCorrection( bufList buf, int pnum );
@@ -289,12 +294,13 @@
 	__global__ void ComputePoroVelocity(bufList buf, int pnum);
 
 	//new method
-	__global__ void ComputeFluidAdvance(bufList buf, int pnum);
+	__global__ void ComputeBetaAdvance(bufList buf, int pnum);
 	//__global__ void ComputePorePressure(bufList buf, int pnum);
 	__global__ void ComputeSolidPorePressure(bufList buf, int pnum);
 	__global__ void ComputeDarcyFlux(bufList buf, int pnum);
 	__global__ void ComputeFluidFlux(bufList buf, int pnum);
 	__global__ void ComputeFluidChange(bufList buf, int pnum);
+	__global__ void ComputeBetaMixVel(bufList buf, int pnum);
 	__global__ void ComputeFPCorrection(bufList buf, int pnum);
 	__global__ void FindNearbySolid(bufList buf, int pnum);
 	__global__ void ComputeSolidDarcyFlux(bufList buf, int pnum);

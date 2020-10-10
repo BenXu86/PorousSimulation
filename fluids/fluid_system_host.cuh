@@ -94,7 +94,7 @@
 	//Multifluid simulation
 	void MfComputePressureCUDA();
 	void MfComputeDriftVelCUDA();
-	void MfComputeAlphaAdvanceCUDA();
+	void MfComputeAdvanceCUDA();
 	void MfComputeCorrectionCUDA();  
 	void MfComputeForceCUDA ();	
 	void MfAdvanceCUDA ( float time , float dt, float ss );

@@ -226,19 +226,19 @@
 
 		void saveParticle(std::string name);
 		int loadParticle(std::string name);
+		
 		void liftup(int mode);
 
 		void ParseMFXML ( std::string name, int id, bool bStart );
 		int SetupMfAddVolume( Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int cat);// cat: category label
 		int SetupMfAddBlendVolume(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs);// cat: category label
-		int SetupMfAddGridSolid(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
+		int SetupMfAddMultiSolid(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs);
 		int SetupMfAddSolidSolid(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 		int SetupMfAddCylinder(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 		int SetupBoundary(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 
 		int SetupMfAddDeformVolume( Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
 		int FluidSystem::SetupMfAddSphere(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs, int type);
-		int FluidSystem::SetupMfAddMagicWand(Vector3DF min, Vector3DF max, float spacing, Vector3DF offs);
 		
 		int SetupModel(PIC*model, float spacing, int type, Vector3DF displacement);
 		int GenerateBunnies(PIC*bunny, float spacing, int type);
@@ -330,6 +330,7 @@
 
 		void LoadParticles(char* filename, Vector3DF off);
 		void solveModel();
+		int						recordNum;
 	private:
 
 		std::string				mSceneName;
