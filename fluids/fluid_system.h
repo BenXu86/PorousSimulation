@@ -226,6 +226,7 @@
 
 		void saveParticle(std::string name);
 		int loadParticle(std::string name);
+		
 		void liftup(int mode);
 
 		void ParseMFXML ( std::string name, int id, bool bStart );
@@ -330,6 +331,8 @@
 
 		void LoadParticles(char* filename, Vector3DF off);
 		void solveModel();
+
+		int						RecordNum;
 	private:
 
 		std::string				mSceneName;
@@ -420,6 +423,8 @@
 		FILE*					mFP;
 		int						mLastPoints;
 		
+
+
 		int						mSpherePnts;
 		int						mTex[1];
 		GLuint					instancingShader;

@@ -111,6 +111,14 @@
 		
 		uint*	isSurface;//0 means internal particles, 1 means surface particle
 		float3* normal;//固体表面的法线方向,指向外部
+		//iteration system
+		float *bx, *by, *bz;//Ax=b
+		float *vx, *vy, *vz;
+		float *rx, *ry, *rz;
+		float *r2x, *r2y, *r2z;
+		float *px, *py, *pz;
+		float *Apx, *Apy, *Apz;
+
 		float*	volumetricStrain;
 		int*	isHead;//是否为兔子头
 		int*	frame;
@@ -168,6 +176,7 @@
 		float			poly6kern, spikykern, lapkern;
 		float			CubicSplineKern1, CubicSplineKern2;
 		float			gradCubicSplineKern1, gradCubicSplineKern2;
+		float			CubicSplineKern, gradCubicSplineKern;
 
 		float3			gridSize, gridDelta, gridMin, gridMax;
 		int3			gridRes, gridScanMax;
@@ -253,6 +262,7 @@
 	__global__ void mfPreComputeDensity ( bufList buf, int pnum );
 	__global__ void mfComputePressure( bufList buf, int pnum );
 	__global__ void mfComputeDriftVel( bufList buf, int pnum );
+	__global__ void mfComputeTDM(bufList buf, int pnum);
 	__global__ void applyAlphaAndBeta(bufList buf, int pnum);
 	__global__ void mfComputeAlphaAdvance( bufList buf, int pnum );
 	__global__ void mfComputeCorrection( bufList buf, int pnum );
@@ -288,6 +298,13 @@
 	__global__ void ComputeInnerBoundaryForce(bufList buf, int pnum);
 	__global__ void ComputePoroVelocity(bufList buf, int pnum);
 
+	//compute Ap
+	__global__ void ComputeIterationStrainAndStress(bufList buf, int pnum, float* px, float*py, float*pz);
+	__global__ void ComputeIterationElasticForce(bufList buf, int pnum, float* px, float*py, float*pz);
+	__global__ void initElasticIteration(bufList buf, int pnum);
+	__global__ void updateV(bufList buf, int pnum, float3 alpha);
+	__global__ void updateP(bufList buf, int pnum, float3 beta);
+	__global__ void ApplyElasticForce(bufList buf, int pnum, float* vx, float*vy, float*vz);
 	//new method
 	__global__ void ComputeFluidAdvance(bufList buf, int pnum);
 	//__global__ void ComputePorePressure(bufList buf, int pnum);
