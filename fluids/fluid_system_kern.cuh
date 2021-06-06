@@ -152,6 +152,8 @@
 	//#define BUF_ROTATION	(BUF_ELASTICID+sizeof(uint))
 	#define BUF_ABSORBEDPERCENT	(BUF_ELASTICID+sizeof(int))
 	#define BUF_BETANEXT	(BUF_ABSORBEDPERCENT + sizeof(float)*MAX_FLUIDNUM*MAX_SOLIDNUM)
+	#define BUF_ISINSIDE	(BUF_BETANEXT + sizeof(float)*MAX_FLUIDNUM*MAX_SOLIDNUM)
+	
 	//porous	
 	//#define BUF_POROVEL		(BUF_BETANEXT+sizeof(float)*MAX_FLUIDNUM)
 	// Fluid Parameters (stored on both host and device)

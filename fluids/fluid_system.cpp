@@ -147,7 +147,7 @@ void FluidSystem::Setup ( bool bStart )
 	printf("max-allowed particle number is %d\n", m_maxAllowedPoints);
 	printf("particle num:%d\n", NumPoints());
 	printf("elastic num:%d\n", numElasticPoints);
-	printf("spacing is %f, smooth radius is %f\n", m_Param[PSPACING], m_Param[PSMOOTHRADIUS]/ m_Param[PSIMSCALE]);
+	printf("spacing is %f, smooth radius is %f£¬ simscale is %f\n", m_Param[PSPACING], m_Param[PSMOOTHRADIUS]/ m_Param[PSIMSCALE], m_Param[PSIMSCALE]);
 	SetupGridAllocate ( m_Vec[PVOLMIN], m_Vec[PVOLMAX], m_Param[PSIMSCALE], m_Param[PGRIDSIZE], 1.0 );	// Setup grid
 
 	FluidClearCUDA ();
@@ -229,11 +229,10 @@ void FluidSystem::RunSimulateMultiCUDAFull()
 
 	QueryPerformanceCounter(&t2);
 	m_CostTime += (t2.QuadPart - t1.QuadPart)*1.0 / tc.QuadPart;
-	if (m_Frame == 3000)
+	if (m_Frame == 1000)
 	{
 		cout << "ave time :" << m_CostTime / m_Frame << endl;
 	}
-
 	TransferFromCUDA();	// return for rendering
 }
 void FluidSystem::OnfirstRun()
@@ -258,21 +257,6 @@ void FluidSystem::OnfirstRun()
 	ComputeCorrectLCUDA();
 	record(PTIME_PRESS, "Compute CorrectL CUDA", start);
 	start.SetSystemTime(ACC_NSEC);
-
-	//MfPredictAdvection(m_Time);
-	//MfComputeDriftVelCUDA();
-	//MfComputeDriftVelCUDA();
-	//MfComputeDriftVelCUDA();                                          //case 1-diff
-	//record(PTIMEDRIFTVEL, "Drift Velocity CUDA", start);
-	//start.SetSystemTime(ACC_NSEC);
-
-	//MfComputeAlphaAdvanceCUDA();									//case 1
-	//record ( PTIMEALPHA, "Alpha Advance CUDA", start );
-	//start.SetSystemTime ( ACC_NSEC );
-
-	//MfComputeCorrectionCUDA();                                        //case5
-	//record ( PTIMECORR, "Alpha Correction and Pressure CUDA", start );		
-	//start.SetSystemTime ( ACC_NSEC );
 
 	TransferFromCUDA();	// return for rendering
 }
@@ -343,16 +327,17 @@ void FluidSystem::Record()
 				float beta[MAX_FLUIDNUM];
 				for (int k = 1; k < MAX_FLUIDNUM; ++k)
 					beta[k] = m_beta[n*MAX_FLUIDNUM*MAX_SOLIDNUM + k * MAX_SOLIDNUM + *type - 2];
-				out << 1 - (beta[2] + beta[3]) << " " << 1 - (beta[1] + beta[3]) << " "
-					<< 1 - (beta[1] + beta[2]) <<" "<< 1 << " ";
-				
+				out << 1 / (1 + sqrt(beta[2] + beta[3])) << " " << 1 / (1 + sqrt(beta[1] + beta[3])) << " "
+					<< sqrt(beta[3]) / (1 + sqrt(beta[3])) <<" "<< 1 << " ";
 			}
 		}
 		else
 		{
 			if (*type == 0)
 			{
-				out << 1 << " " << 1 << " " << 1 << " " << 1 << " ";
+				out << 1 << " " << 1 << " " << 1 << " " << 
+					0.6*m_alpha[n*MAX_FLUIDNUM + 1] + m_alpha[n*MAX_FLUIDNUM + 2] +
+					m_alpha[n*MAX_FLUIDNUM + 3] << " ";
 			}
 			else
 			{
@@ -361,7 +346,8 @@ void FluidSystem::Record()
 					beta[k] = m_beta[n*MAX_FLUIDNUM*MAX_SOLIDNUM + k * MAX_SOLIDNUM + *type - 2];
 				
 				if (*type == 5)
-					out << 1 / (1 + beta[2] + beta[3]) << " " << 1 / (1 + beta[1] + beta[3]) << " " << beta[3] / (1 + beta[3]) << " " << 1 << " ";
+					out << 1 / (1 + sqrt(beta[2] + beta[3])) << " " << 1 / (1 + sqrt(beta[1] + beta[3])) << " "
+					<< sqrt(beta[3]) / (1 + sqrt(beta[3])) << " " << 1 << " ";
 				else
 					out << 0 << " " << 1 << " " << 0 << " " << 1 << " ";
 			}
@@ -499,11 +485,13 @@ void FluidSystem::Run (int width, int height)
 	RunSimulateMultiCUDAFull();
 	//DWORD end = timeGetTime();
 	//printf("simulate time %d\n", end - start);
-	if ( GetYan(START_OUTPUT) && m_Frame % (int)(0.0025 / m_DT) == 0 && RecordNum <= 600) {
+	if ( GetYan(START_OUTPUT) && m_Frame % (int)(0.005 / m_DT) == 0 && RecordNum <= 400) {
 		//StartRecord();
 		start.SetSystemTime ( ACC_NSEC );
+		CaptureVideo(width, height);
 		Record ();
 		RecordNum++;
+		
 		record ( PTIME_RECORD, "Record", start );
 	}
 	//if((_example == 2 && m_Frame == 10000))
