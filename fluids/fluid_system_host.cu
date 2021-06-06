@@ -922,14 +922,14 @@ void MfPredictAdvection(float time)
 	}
 	cudaThreadSynchronize();
 
-	//step2:compute intermediate velocity
-	computeMidVel << <fcuda.numBlocks, fcuda.numThreads >> >(fbuf, fcuda.pnum);
-	//updateVelocity << <fcuda.numBlocks, fcuda.numThreads >> >(time, fbuf, fcuda.pnum);
-	error = cudaGetLastError();
-	if (error != cudaSuccess) {
-		fprintf(stderr, "CUDA ERROR: Compute mid vel: %s\n", cudaGetErrorString(error));
-	}
-	cudaThreadSynchronize();
+	////step2:compute intermediate velocity
+	//computeMidVel << <fcuda.numBlocks, fcuda.numThreads >> >(fbuf, fcuda.pnum);
+	////updateVelocity << <fcuda.numBlocks, fcuda.numThreads >> >(time, fbuf, fcuda.pnum);
+	//error = cudaGetLastError();
+	//if (error != cudaSuccess) {
+	//	fprintf(stderr, "CUDA ERROR: Compute mid vel: %s\n", cudaGetErrorString(error));
+	//}
+	//cudaThreadSynchronize();
 
 	ComputeBRestVolume << < fcuda.numBlocks, fcuda.numThreads >> > (fbuf, fcuda.pnum);
 	error = cudaGetLastError();
@@ -2183,7 +2183,7 @@ __device__ float3 contributeTDM(int i, int muli, float idens, float3 pos, int ce
 			for (uint fcount = 1; fcount < simData.mf_catnum; fcount++)
 			{
 				float3 dtermj = cmterm * dot(buf.mf_vel_phrel[mulj + fcount], dist) * buf.mf_alpha[mulj + fcount] * buf.mf_vel_phrel[mulj + fcount];
-				float3 dtermi = cmterm * dot(buf.mf_vel_phrel[i*MAX_FLUIDNUM + fcount], dist) * buf.mf_alpha[i*MAX_FLUIDNUM+fcount] * buf.mf_vel_phrel[i*MAX_FLUIDNUM + fcount];
+				float3 dtermi = cmterm * dot(buf.mf_vel_phrel[muli + fcount], dist) * buf.mf_alpha[muli +fcount] * buf.mf_vel_phrel[muli + fcount];
 				force += (dtermj + dtermi) * simData.mf_dens[fcount] * idens;
 			}
 	}
@@ -2204,7 +2204,7 @@ __global__ void applyAlphaAndBeta(bufList buf, int pnum)
 
 	register float3 accel = -buf.mforce[i];				// final accel (g-a) of last step was stored in here cf. advance, 
 	register uint muloffseti = i * MAX_FLUIDNUM;
-
+	register uint muli = muloffseti * MAX_SOLIDNUM;
 	float alphasum = 0;
 	for (uint fcount = 0; fcount < simData.mf_catnum; fcount++)
 	{
@@ -2215,7 +2215,7 @@ __global__ void applyAlphaAndBeta(bufList buf, int pnum)
 		//buf.mf_alphagrad[i*MAX_FLUIDNUM + fcount] = make_float3(0, 0, 0);
 	}
 	for (uint fcount = 0; fcount < MAX_FLUIDNUM*MAX_SOLIDNUM; fcount++)
-		buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + fcount] = buf.mf_beta_next[i*MAX_FLUIDNUM*MAX_SOLIDNUM + fcount];
+		buf.mf_beta[muli + fcount] = buf.mf_beta_next[muli + fcount];
 	
 	float newdens, newvisc, newmass, newdensout;
 	//Restdensity Update
@@ -2226,8 +2226,8 @@ __global__ void applyAlphaAndBeta(bufList buf, int pnum)
 	//newmass = 0.0;
 	for (uint fcount = 1; fcount < simData.mf_catnum; fcount++)
 	{
-		newdens += buf.mf_alpha[i*MAX_FLUIDNUM + fcount] * simData.mf_dens[fcount];
-		newvisc += buf.mf_alpha[i*MAX_FLUIDNUM + fcount] * simData.mf_visc[fcount];
+		newdens += buf.mf_alpha[muloffseti + fcount] * simData.mf_dens[fcount];
+		newvisc += buf.mf_alpha[muloffseti + fcount] * simData.mf_visc[fcount];
 		//newdensout += buf.mf_alpha[i*MAX_FLUIDNUM + fcount] * simData.mf_dens[fcount];
 		//newmass += buf.mf_alpha[i*MAX_FLUIDNUM + fcount] * simData.mf_mass[fcount];
 		//newmass += buf.mf_beta[i*MAX_FLUIDNUM + fcount] * simData.mf_mass[fcount];
@@ -2235,8 +2235,8 @@ __global__ void applyAlphaAndBeta(bufList buf, int pnum)
 	for (uint fcount = 1; fcount < simData.mf_catnum; fcount++)
 		for(int l=0;l<MAX_SOLIDNUM;++l)
 		{
-			newdens += buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + fcount*MAX_SOLIDNUM + l] * simData.mf_dens[fcount];
-			newvisc += buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + fcount*MAX_SOLIDNUM + l] * simData.mf_visc[fcount];
+			newdens += buf.mf_beta[muli + fcount*MAX_SOLIDNUM + l] * simData.mf_dens[fcount];
+			newvisc += buf.mf_beta[muli + fcount*MAX_SOLIDNUM + l] * simData.mf_visc[fcount];
 		}
 	//if (buf.MFtype[i] == 0)
 	{
@@ -2493,7 +2493,7 @@ __global__ void mfComputeAlphaAdvance( bufList buf, int pnum )
 		{
 			alphachange[fcount] = -0.99;// * ((int)(buf.mf_alpha[muloffseti+fcount]>0)-(int)(buf.mf_alpha[muloffseti+fcount]<0));
 		}
-		buf.mf_alphachange[i*MAX_FLUIDNUM + fcount] = alphachange[fcount];
+		buf.mf_alphachange[muloffseti + fcount] = alphachange[fcount];
 		//if (abs(alphachange[fcount]) >= 0.001)
 		//	printf("particle %d's phase %d's alpha change is %f\n", i, fcount, alphachange[fcount]);
 		buf.mf_alpha_next[muloffseti+fcount] = alphachange[fcount] + alpha[fcount];
@@ -2502,8 +2502,8 @@ __global__ void mfComputeAlphaAdvance( bufList buf, int pnum )
 		if (isnan(alphachange[fcount]) || isnan(alpha[fcount]))
 			printf("particle %d phase %d's alpha change is %f, pre alpha is %f, vmk is (%f,%f,%f)\n",
 				i, fcount, alphachange[fcount], alpha[fcount],
-				buf.mf_vel_phrel[i*MAX_FLUIDNUM + fcount].x,
-				buf.mf_vel_phrel[i*MAX_FLUIDNUM + fcount].y, buf.mf_vel_phrel[i*MAX_FLUIDNUM + fcount].z);
+				buf.mf_vel_phrel[muloffseti + fcount].x,
+				buf.mf_vel_phrel[muloffseti + fcount].y, buf.mf_vel_phrel[muloffseti + fcount].z);
 
 		//buf.mf_alpha[muloffseti+fcount] *= simData.mf_dt;
 		//if(buf.mf_alpha[muloffseti+fcount]<-0.99)
@@ -2538,30 +2538,32 @@ __global__ void mfComputeCorrection( bufList buf, int pnum )
 	gc -= nadj;
 
 	uint muloffseti = i * MAX_FLUIDNUM;
+	register uint muli = muloffseti*MAX_SOLIDNUM, kn;
 	float sum, alphasum = 0, betasum = 0, alphaPercent, betaPercent;
 	int flag;
 	sum = 0.0f;
-	int maxcat = 1, maxV = -1000;
+	int maxcat = 1, maxV = -1000000;
 	for(uint fcount = 1; fcount < simData.mf_catnum; fcount++)
 	{
+		kn = fcount*MAX_SOLIDNUM;
 		for(int l=0;l<MAX_SOLIDNUM;++l)
 		{
-			if(buf.mf_beta_next[muloffseti*MAX_SOLIDNUM + fcount*MAX_SOLIDNUM + l] != 0)
-				if (buf.mf_beta_next[muloffseti*MAX_SOLIDNUM + fcount*MAX_SOLIDNUM + l] > maxV)
+			if(buf.mf_beta_next[muli + kn + l] != 0)
+				if (buf.mf_beta_next[muli + kn + l] > maxV)
 				{
-					maxcat = fcount*MAX_SOLIDNUM + l;
-					maxV = buf.mf_beta_next[muloffseti*MAX_SOLIDNUM + fcount*MAX_SOLIDNUM + l];
+					maxcat = kn + l;
+					maxV = buf.mf_beta_next[muli + kn + l];
 				}
-			if (buf.mf_beta_next[muloffseti*MAX_SOLIDNUM + fcount*MAX_SOLIDNUM + l] < 0.01)
-				buf.mf_beta_next[muloffseti*MAX_SOLIDNUM + fcount*MAX_SOLIDNUM + l] = 0;
+			if (buf.mf_beta_next[muli + kn + l] < 0.01)
+				buf.mf_beta_next[muli + kn + l] = 0;
 			//if (buf.mf_beta_next[muloffseti*MAX_SOLIDNUM + fcount*MAX_SOLIDNUM + l] > 0.99)
 			//	buf.mf_beta_next[muloffseti*MAX_SOLIDNUM + fcount*MAX_SOLIDNUM + l] = 1.0f;
-			betasum += buf.mf_beta_next[muloffseti*MAX_SOLIDNUM + fcount*MAX_SOLIDNUM + l];
+			betasum += buf.mf_beta_next[muli + kn + l];
 		}
 		if(buf.mf_alpha_next[muloffseti + fcount] != 0)
 			if (buf.mf_alpha_next[muloffseti + fcount] > maxV)
 			{
-				maxcat = fcount*MAX_SOLIDNUM;
+				maxcat = fcount;
 				maxV = buf.mf_alpha_next[muloffseti + fcount];
 			}
 		if (buf.mf_alpha_next[muloffseti + fcount] < 0.01)
@@ -2590,12 +2592,30 @@ __global__ void mfComputeCorrection( bufList buf, int pnum )
 	
 	for(uint fcount = 1; fcount < simData.mf_catnum; fcount++)
 	{
-		buf.mf_alpha_next[muloffseti + fcount] = (flag)*buf.mf_alpha_next[muloffseti + fcount]* alphaPercent * alphasum + (1 - flag)*(fcount == maxcat ? 1 : 0);
-		for(int l = 0;l<MAX_SOLIDNUM;++l)
-			buf.mf_beta_next[muloffseti*MAX_SOLIDNUM + fcount*MAX_SOLIDNUM+l] = 
-				(flag)*buf.mf_beta_next[muloffseti*MAX_SOLIDNUM + fcount*MAX_SOLIDNUM + l] * betaPercent * betasum
-					+ (1 - flag)*(fcount*MAX_SOLIDNUM + l == maxcat ? 1 : 0);
+		buf.mf_alpha_next[muloffseti + fcount] = (flag)*buf.mf_alpha_next[muloffseti + fcount] * alphaPercent * alphasum + (1 - flag)* 0.333;// +(1 - flag)*(fcount == maxcat ? 1 : 0);
+		kn = fcount*MAX_SOLIDNUM;
+		for (int l = 0; l < MAX_SOLIDNUM; ++l)
+			buf.mf_beta_next[muli + kn + l] =
+			(flag)*buf.mf_beta_next[muli + kn + l] * betaPercent * betasum;
+					//+ (1 - flag)*(kn + l == maxcat ? 1 : 0);
 	}
+	//alphasum = betasum = 0;
+	//for (uint fcount = 1; fcount < simData.mf_catnum; fcount++)
+	//{
+	//	alphasum += buf.mf_alpha_next[muloffseti + fcount];
+	//	for (int l = 0; l < MAX_SOLIDNUM; ++l)
+	//		betasum += buf.mf_beta_next[muloffseti*MAX_SOLIDNUM + fcount*MAX_SOLIDNUM + l];
+	//}
+
+	//int muli = i*MAX_FLUIDNUM*MAX_SOLIDNUM;
+	//if (alphasum < 0.5 && buf.mpos[i].x < -20)
+	//	printf("betasum is %f, beta is (%f,%f,%f,%f)(%f,%f,%f,%f)(%f,%f,%f,%f), alpha is (%f,%f,%f)\n", 
+	//		betasum,
+	//		buf.mf_beta_next[muli + 1 * MAX_SOLIDNUM + 0], buf.mf_beta_next[muli + 1 * MAX_SOLIDNUM + 1], buf.mf_beta_next[muli + 1 * MAX_SOLIDNUM + 2], buf.mf_beta_next[muli + 1 * MAX_SOLIDNUM + 3],
+	//		buf.mf_beta_next[muli + 2 * MAX_SOLIDNUM + 0], buf.mf_beta_next[muli + 2 * MAX_SOLIDNUM + 1], buf.mf_beta_next[muli + 2 * MAX_SOLIDNUM + 2], buf.mf_beta_next[muli + 2 * MAX_SOLIDNUM + 3],
+	//		buf.mf_beta_next[muli + 3 * MAX_SOLIDNUM + 0], buf.mf_beta_next[muli + 3 * MAX_SOLIDNUM + 1], buf.mf_beta_next[muli + 3 * MAX_SOLIDNUM + 2], buf.mf_beta_next[muli + 3 * MAX_SOLIDNUM + 3],
+	//		buf.mf_alpha_next[i*MAX_FLUIDNUM+1], buf.mf_alpha_next[i*MAX_FLUIDNUM + 2], buf.mf_alpha_next[i*MAX_FLUIDNUM + 3]);
+
 }
 __device__ float gamma(float q)
 {
@@ -3253,7 +3273,7 @@ __global__ void updatePosition(float time, bufList buf, int pnum){
 		//buf.mclr[i] = COLORA(buf.mf_alpha[i*MAX_FLUIDNUM + 1], buf.mf_alpha[i*MAX_FLUIDNUM + 2],
 		//	buf.mf_alpha[i*MAX_FLUIDNUM + 3], !simData.HideFluid*0.55);
 		//buf.mclr[i] = COLORA(buf.mf_alpha[i*MAX_FLUIDNUM + 1]+beta[1], buf.mf_alpha[i*MAX_FLUIDNUM + 2]+beta[2],
-		//	buf.mf_alpha[i*MAX_FLUIDNUM + 3]+beta[3], !simData.HideFluid*0.55);
+		//	buf.mf_alpha[i*MAX_FLUIDNUM + 3]+beta[3], !simData.HideFluid);
 
 		for (int k = 1; k < MAX_FLUIDNUM; ++k)
 			for (int l = 0; l < MAX_SOLIDNUM; ++l)
@@ -3269,11 +3289,10 @@ __global__ void updatePosition(float time, bufList buf, int pnum){
 		buf.mforce[i] = make_float3(0,0,0);
 		if (buf.MFtype[i] > 2) 
 		{
-			float ratio = 1;
 			for (int k = 1; k < MAX_FLUIDNUM; ++k)
 				beta[k] = buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k * MAX_SOLIDNUM + buf.MFtype[i] - 3];
 			float sum = beta[1] + beta[2] + beta[3];
-			buf.mclr[i] = COLORA(ratio*(beta[1]), ratio*(beta[2]), ratio*(beta[3]), (0.3+ratio*(sum))*!simData.HideRigid);
+			buf.mclr[i] = COLORA(sqrt(beta[1]), sqrt(beta[2]), sqrt(beta[3]), (0.2+ sqrt(sum))*!simData.HideRigid);
 			//buf.mclr[i] = COLORA(1-beta[2]-beta[3], 1-beta[1]-beta[3], 1-beta[1]-beta[2], !simData.HideRigid);
 		}
 		else
@@ -3346,38 +3365,7 @@ __global__ void computeMidVel(bufList buf, int pnum)
 		return;
 	}
 
-	// Get particle vars
-	register float3 accel, pos = buf.mpos[i];
-	register float speed;
-	//buf.vel_mid[i] = buf.mveleval[i];
-	//if (dot(buf.vel_mid[i], buf.vel_mid[i])!=dot(buf.mveleval[i], buf.mveleval[i]))
-	//	printf("particle %d's type is %d, vel is (%f,%f,%f), vel_mid is (%f,%f,%f)\n",
-	//		i, buf.MFtype[i], buf.mveleval[i].x, buf.mveleval[i].y, buf.mveleval[i].z,
-	//		buf.vel_mid[i].x, buf.vel_mid[i].y, buf.vel_mid[i].z);
-	//	float scale_dens = 1000.0/buf.mf_restdensity[i];
 
-	accel = buf.maccel[i];
-
-	speed = accel.x*accel.x + accel.y*accel.y + accel.z*accel.z;
-	if (speed > simData.AL2) {
-		//printf("other accel is (%f,%f,%f), vel is (%f,%f,%f)\n",
-		//	accel.x, accel.y, accel.z, buf.mveleval[i].x, buf.mveleval[i].y, buf.mveleval[i].z);
-		//accel *= simData.AL / sqrt(speed);
-	}
-	buf.mforce[i] = accel;
-	buf.fluidForce[i] = accel;
-	if (buf.misbound[i] != 1)
-	{
-		buf.vel_mid[i] = buf.mveleval[i] + simData.mf_dt*accel;
-	}
-	else 
-	{
-		buf.mveleval[i] = make_float3(0, 0, 0);		// v(t+1) = [v(t-1/2) + v(t+1/2)] * 0.5			
-		buf.maccel[i] = make_float3(0, 0, 0);
-		buf.mforce[i] = make_float3(0, 0, 0);
-		buf.vel_mid[i] = make_float3(0, 0, 0);
-		//buf.mclr[i] = COLORA(1,1,1,0.8);
-	}
 }
 
 void LeapFrogIntegration(float time){
@@ -4294,6 +4282,7 @@ __device__ void contributePorePressure(int i, int cell, bufList buf,float* beta,
 
 	int cfirst = buf.mgridoff[cell];
 	int clast = cfirst + buf.mgridcnt[cell];
+	
 	//int index = buf.elasticID[i];
 	float q;
 	for (int cndx = cfirst; cndx < clast; cndx++)
@@ -4320,11 +4309,7 @@ __device__ void contributePorePressure(int i, int cell, bufList buf,float* beta,
 		//	cmterm = 0.25*pow(2 - q, 3);
 
 		cmterm *= buf.mf_restmass[j] / buf.mf_restdensity[j];
-		if (buf.totalDis[j*MAX_SOLIDNUM + buf.MFtype[i] - 3] == 0)
-		{
-			count++;
-			//continue;
-		}
+		mulj = j*MAX_FLUIDNUM*MAX_SOLIDNUM;
 		cmterm /= buf.totalDis[j*MAX_SOLIDNUM + buf.MFtype[i] - 3];
 		for (int k = 1; k < MAX_FLUIDNUM; ++k)
 		{
@@ -4332,8 +4317,8 @@ __device__ void contributePorePressure(int i, int cell, bufList buf,float* beta,
 			{
 				//if (simData.mf_permeability[k*MAX_SOLIDNUM + l] <= 0)
 				//	continue;
-				sum += (buf.mf_beta[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM+ buf.MFtype[i] - 3] * simData.mf_dens[k] / simData.mf_mass[k]) * cmterm;
-				beta[k] += (buf.mf_beta[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[i] - 3] * simData.mf_dens[k] / simData.mf_mass[k]) * cmterm;
+				sum += (buf.mf_beta[mulj + k*MAX_SOLIDNUM+ buf.MFtype[i] - 3] * simData.mf_dens[k] / simData.mf_mass[k]) * cmterm;
+				beta[k] += (buf.mf_beta[mulj + k*MAX_SOLIDNUM + buf.MFtype[i] - 3] * simData.mf_dens[k] / simData.mf_mass[k]) * cmterm;
 			}
 	/*		sum += buf.mf_beta[j*MAX_FLUIDNUM + k] * cmterm;
 			beta[k] += buf.mf_beta[j*MAX_FLUIDNUM + k] * cmterm;*/
@@ -4356,7 +4341,7 @@ __global__ void ComputeSolidPorePressure(bufList buf, int pnum)
 	float fluidSum = 0;
 	float beta[MAX_FLUIDNUM];
 	float normalize = 0;
-
+	int muli = i*MAX_FLUIDNUM*MAX_SOLIDNUM;
 	if (buf.MFtype[i] > 1)
 	{
 		int count = 0;
@@ -4371,12 +4356,12 @@ __global__ void ComputeSolidPorePressure(bufList buf, int pnum)
 		//		fluidSum, beta[0], beta[1], beta[2], beta[3], count);
 		for (int k = 0; k < MAX_FLUIDNUM; ++k)
 		{
-			buf.pressure_water[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[i] - 3] = simData.CoCompressibility*(beta[k] + 1*(fluidSum-beta[k]));
-			buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[i] - 3] = beta[k];
+			buf.pressure_water[muli + k*MAX_SOLIDNUM + buf.MFtype[i] - 3] = simData.CoCompressibility*(beta[k] + 1*(fluidSum-beta[k]));
+			buf.mf_beta[muli + k*MAX_SOLIDNUM + buf.MFtype[i] - 3] = beta[k];
 			
-			if (isnan(buf.pressure_water[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[i] - 3]))
+			if (isnan(buf.pressure_water[muli + k*MAX_SOLIDNUM + buf.MFtype[i] - 3]))
 				printf("solid %d's pore pressure is %f.density solid is %f, count is %d\n", buf.MFtype[i],
-					buf.pressure_water[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[i] - 3],
+					buf.pressure_water[muli + k*MAX_SOLIDNUM + buf.MFtype[i] - 3],
 					buf.density_solid[i], count);
 		}
 	}
@@ -4385,7 +4370,7 @@ __global__ void ComputeSolidPorePressure(bufList buf, int pnum)
 		for (int k = 1; k < MAX_FLUIDNUM; ++k)
 			for (int l = 0; l < MAX_SOLIDNUM; ++l)
 			{
-				buf.pressure_water[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] = simData.pressRatio[k*MAX_SOLIDNUM + l] * simData.rest_porosity*simData.CoCompressibility;
+				buf.pressure_water[muli + k*MAX_SOLIDNUM + l] = simData.pressRatio[k*MAX_SOLIDNUM + l] * simData.rest_porosity*simData.CoCompressibility;
 			}
 	}
 }
@@ -4589,7 +4574,7 @@ __device__ void contributePoroVelocity(int i, int cell, bufList buf, float3* por
 	float3 dist;
 	float cmterm;
 	float pmterm;
-	int j, jndex;
+	int j, jndex, mulj;
 	
 	if (buf.mgridcnt[cell] == 0) return;
 
@@ -4612,21 +4597,16 @@ __device__ void contributePoroVelocity(int i, int cell, bufList buf, float3* por
 		else
 			pmterm = 2 * pow(1 - q, 3);
 
-		//if (q >= 2 || q <= 0)
-		//	continue;
-		//if (q > 1)
-		//	pmterm = 0.25*pow(2 - q, 3);
-		//else
-		//	pmterm = 1 - 1.5*q*q*(1 - 0.5*q);
+		mulj = j*MAX_FLUIDNUM*MAX_SOLIDNUM;
 
 		for (int k = 1; k < simData.mf_catnum; k++)
 		{
-			if (isnan(dot(buf.gradPressure[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[j] - 3], buf.gradPressure[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[j] - 3])))
-			{
-				count++;
+			//if (isnan(dot(buf.gradPressure[mulj + k*MAX_SOLIDNUM + buf.MFtype[j] - 3], buf.gradPressure[mulj + k*MAX_SOLIDNUM + buf.MFtype[j] - 3])))
+			//{
+			//	count++;
 				//continue;
-			}
-			poroVel[k*MAX_SOLIDNUM + buf.MFtype[j] - 3] += pmterm * buf.gradPressure[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM+ buf.MFtype[j] - 3];
+			//}
+			poroVel[k*MAX_SOLIDNUM + buf.MFtype[j] - 3] += pmterm * buf.gradPressure[mulj + k*MAX_SOLIDNUM+ buf.MFtype[j] - 3];
 			advectVel[k*MAX_SOLIDNUM + buf.MFtype[j] - 3] += pmterm * buf.mveleval[j];
 		}
 		normalize[buf.MFtype[j] - 3] += pmterm;
@@ -4651,6 +4631,7 @@ __global__ void ComputePoroVelocity(bufList buf, int pnum)
 	float3 force, forcesum = make_float3(0,0,0);
 	float betadensity = 0;
 	float betasum = 0;
+	int muli = i*MAX_FLUIDNUM*MAX_SOLIDNUM;
 	//buf.poroForce[i] = make_float3(0, 0, 0);
 	int count = 0;
 	for (int k = 1; k < simData.mf_catnum*MAX_SOLIDNUM; ++k)
@@ -4659,8 +4640,8 @@ __global__ void ComputePoroVelocity(bufList buf, int pnum)
 		{
 			poroVel[k*MAX_SOLIDNUM+l] = make_float3(0, 0, 0);
 			advectVel[k*MAX_SOLIDNUM + l] = make_float3(0, 0, 0);
-			betadensity += buf.mf_beta[i*simData.mf_catnum*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] * simData.mf_dens[k];
-			betasum += buf.mf_beta[i*simData.mf_catnum*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l];
+			betadensity += buf.mf_beta[muli + k*MAX_SOLIDNUM + l] * simData.mf_dens[k];
+			betasum += buf.mf_beta[muli + k*MAX_SOLIDNUM + l];
 			normalize[l] = 0;
 		}
 	}
@@ -4685,11 +4666,11 @@ __global__ void ComputePoroVelocity(bufList buf, int pnum)
 				advectVel[k*MAX_SOLIDNUM + l] /= buf.totalDis[i*MAX_SOLIDNUM + l];
 				//poroVel[k] /= abs(normalize);
 				//advectVel[k] /= abs(normalize);
-				buf.poroVel[i*simData.mf_catnum*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] = poroVel[k*MAX_SOLIDNUM + l] + advectVel[k*MAX_SOLIDNUM + l];
+				buf.poroVel[muli + k*MAX_SOLIDNUM + l] = poroVel[k*MAX_SOLIDNUM + l] + advectVel[k*MAX_SOLIDNUM + l];
 
 				//force = buf.mf_beta[i*MAX_FLUIDNUM + k]*(poroVel[k] - buf.mveleval[i])/simData.mf_dt;
 				force = simData.mf_dens[k] * buf.poroVel[i*simData.mf_catnum*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] - betadensity * buf.mveleval[i];
-				force *= buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM+l] / (simData.mf_dt*buf.mf_restdensity[i]);
+				force *= buf.mf_beta[muli + k*MAX_SOLIDNUM+l] / (simData.mf_dt*buf.mf_restdensity[i]);
 				//buf.mforce[i] += force;
 				forcesum += force;
 				//buf.poroForce[i] += force;
@@ -4708,7 +4689,7 @@ __global__ void ComputePoroVelocity(bufList buf, int pnum)
 		else
 		{
 			for (int k = 1; k < simData.mf_catnum; ++k)
-				buf.poroVel[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] = make_float3(0, 0, 0);
+				buf.poroVel[muli + k*MAX_SOLIDNUM + l] = make_float3(0, 0, 0);
 		}
 	}
 
@@ -4728,7 +4709,7 @@ __global__ void ComputePoroVelocity(bufList buf, int pnum)
 	buf.mforce[i] += forcesum;
 }
 
-__device__ void contributeFluidFlux(int i, int cell, bufList buf, float&normalize)
+__device__ void contributeFluidFlux(int i, int muli, int cell, bufList buf, float&normalize)
 {
 	float dsq, c;
 	register float d2 = simData.psimscale * simData.psimscale;
@@ -4763,6 +4744,7 @@ __device__ void contributeFluidFlux(int i, int cell, bufList buf, float&normaliz
 		else
 			cmterm = -simData.gradCubicSplineKern * pow(1 - q, 2);
 		cmterm *= buf.mf_restmass[j] * buf.density_solid[j];
+		mulj = j*MAX_FLUIDNUM*MAX_SOLIDNUM;
 		//dsq = sqrt(dsq);
 		//c = (simData.psmoothradius - dsq);
 		//cmterm = c*c*simData.spikykern*buf.mf_restmass[j] * buf.density_solid[j];
@@ -4770,12 +4752,12 @@ __device__ void contributeFluidFlux(int i, int cell, bufList buf, float&normaliz
 		for (int k = 1; k < simData.mf_catnum; ++k)
 		{
 			//cmterm1 = simData.CoCompressibility * simData.rest_porosity - buf.pressure_water[j*MAX_FLUIDNUM + k];
-			cmterm1 = buf.pressure_water[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[j] - 3] 
-				- buf.pressure_water[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[j] - 3];
+			cmterm1 = buf.pressure_water[muli + k*MAX_SOLIDNUM + buf.MFtype[j] - 3]
+				- buf.pressure_water[mulj + k*MAX_SOLIDNUM + buf.MFtype[j] - 3];
 
-			buf.gradPressure[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[j] - 3] += 
+			buf.gradPressure[muli + k*MAX_SOLIDNUM + buf.MFtype[j] - 3] +=
 				(buf.mf_alpha[i*MAX_FLUIDNUM + k] + 
-					buf.mf_beta[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[j] - 3])
+					buf.mf_beta[mulj + k*MAX_SOLIDNUM + buf.MFtype[j] - 3])
 				*cmterm1*pmterm;
 		}
 		normalize += cmterm;
@@ -4799,21 +4781,21 @@ __global__ void ComputeFluidFlux(bufList buf, int pnum)
 	if (gc == GRID_UNDEF) return;						// particle out-of-range
 	gc -= nadj;
 	float normalize = 0;
-	
+	int muli = i*MAX_FLUIDNUM*MAX_SOLIDNUM;
 	for(int k=1;k<simData.mf_catnum;++k)
 		for (int l = 0; l<MAX_SOLIDNUM; ++l)
-			buf.gradPressure[i*MAX_FLUIDNUM*MAX_SOLIDNUM+k*MAX_SOLIDNUM+l] = make_float3(0, 0, 0);
+			buf.gradPressure[muli +k*MAX_SOLIDNUM+l] = make_float3(0, 0, 0);
 	
 	for (int c = 0; c < simData.gridAdjCnt; c++)
 	{
-		contributeFluidFlux(i, gc + simData.gridAdj[c], buf, normalize);
+		contributeFluidFlux(i, muli, gc + simData.gridAdj[c], buf, normalize);
 	}
 	//if(normalize !=0)
 	for (int k = 1; k<simData.mf_catnum; ++k)
 		for (int l = 0; l < MAX_SOLIDNUM; ++l)
 			//buf.gradPressure[i*MAX_FLUIDNUM + k] *= simData.mf_permeability[k] / (simData.mf_visc[k]*abs(normalize));
 		{
-			buf.gradPressure[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l]
+			buf.gradPressure[muli + k*MAX_SOLIDNUM + l]
 				*= simData.capillary*simData.mf_permeability[k*MAX_SOLIDNUM + l] / simData.mf_visc[k];
 			//if (dot(buf.gradPressure[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l], buf.gradPressure[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l]) != 0)
 			//	printf("%d's phase %d  %d's grad pressure is (%f,%f,%f)\n", i, k, l,
@@ -4827,7 +4809,7 @@ __global__ void ComputeFluidFlux(bufList buf, int pnum)
 	//		);
 
 }
-__device__ void contributeSolidDarcyFlux(int i, int cell, bufList buf)
+__device__ void contributeSolidDarcyFlux(int i, int muli, int cell, bufList buf)
 {
 	float dsq, c;
 	register float d2 = simData.psimscale * simData.psimscale;
@@ -4856,6 +4838,7 @@ __device__ void contributeSolidDarcyFlux(int i, int cell, bufList buf)
 		dsq = (dist.x*dist.x + dist.y*dist.y + dist.z*dist.z);
 		if (!(dsq < r2 && dsq > 0))
 			continue;
+		mulj = j*MAX_FLUIDNUM*MAX_SOLIDNUM;
 		dist *= simData.psimscale;
 		dsq = sqrt(dsq*d2);
 		c = (simData.psmoothradius - dsq);
@@ -4865,9 +4848,9 @@ __device__ void contributeSolidDarcyFlux(int i, int cell, bufList buf)
 		//	cmterm = c*c*simData.spikykern*buf.mf_restmass[j] * buf.mdensity[i];
 		pmterm = dist / dsq*cmterm;
 		for (int k = 1; k<simData.mf_catnum; ++k)
-			buf.gradPressure[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[i]-3] -= 
-				(buf.pressure_water[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[i] - 3]
-				- buf.pressure_water[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[i] - 3])*pmterm;
+			buf.gradPressure[muli + k*MAX_SOLIDNUM + buf.MFtype[i]-3] -=
+				(buf.pressure_water[mulj + k*MAX_SOLIDNUM + buf.MFtype[i] - 3]
+				- buf.pressure_water[muli + k*MAX_SOLIDNUM + buf.MFtype[i] - 3])*pmterm;
 		//normalize += cmterm;
 	}
 }
@@ -4883,17 +4866,18 @@ __global__ void ComputeSolidDarcyFlux(bufList buf, int pnum)
 	uint gc = buf.mgcell[i];
 	if (gc == GRID_UNDEF) return;						// particle out-of-range
 	gc -= nadj;
+	int muli = i*MAX_FLUIDNUM*MAX_SOLIDNUM;
 	for (int k = 1; k<simData.mf_catnum; ++k)
-		buf.gradPressure[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[i] - 3] = make_float3(0, 0, 0);
+		buf.gradPressure[muli + k*MAX_SOLIDNUM + buf.MFtype[i] - 3] = make_float3(0, 0, 0);
 	for (int c = 0; c < simData.gridAdjCnt; c++)
 	{
-		contributeSolidDarcyFlux(i, gc + simData.gridAdj[c], buf);
+		contributeSolidDarcyFlux(i, muli, gc + simData.gridAdj[c], buf);
 	}
 
 	for (int k = 1; k < simData.mf_catnum; ++k)
 	{
 		//poro velocity
-		buf.gradPressure[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM+buf.MFtype[i]-3] 
+		buf.gradPressure[muli + k*MAX_SOLIDNUM+buf.MFtype[i]-3]
 			*= simData.mf_permeability[k*MAX_SOLIDNUM+ buf.MFtype[i] - 3] / (simData.mf_visc[k] * simData.rest_porosity);
 		//buf.gradPressure[i*MAX_FLUIDNUM + k] += buf.mveleval[i];
 	}
@@ -4908,7 +4892,7 @@ __global__ void ComputeSolidDarcyFlux(bufList buf, int pnum)
 	//		buf.gradPressure[i*MAX_FLUIDNUM*MAX_SOLIDNUM + 2 * MAX_SOLIDNUM].y, buf.gradPressure[i*MAX_FLUIDNUM*MAX_SOLIDNUM + 2 * MAX_SOLIDNUM].z);
 	//}
 }
-__device__ void contributeFluidChange(int i, int cell, bufList buf)
+__device__ void contributeFluidChange(int i, int muli, int cell, bufList buf)
 {
 	float dsq, c;
 	register float d2 = simData.psimscale * simData.psimscale;
@@ -4951,8 +4935,8 @@ __device__ void contributeFluidChange(int i, int cell, bufList buf)
 		//c = simData.psmoothradius - dsq;
 		//cmterm = c * c * simData.spikykern * buf.mf_restmass[j] * buf.density_solid[j];
 		for(int k=1;k<simData.mf_catnum;++k)
-			buf.divDarcyFlux[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[j] - 3] += 
-				dot(buf.gradPressure[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + buf.MFtype[j] - 3], dist / dsq)*cmterm;
+			buf.divDarcyFlux[muli + k*MAX_SOLIDNUM + buf.MFtype[j] - 3] +=
+				dot(buf.gradPressure[muli + k*MAX_SOLIDNUM + buf.MFtype[j] - 3], dist / dsq)*cmterm;
 		//normalize += cmterm;
 	}
 	return;
@@ -4967,41 +4951,44 @@ __global__ void ComputeFluidChange(bufList buf, int pnum)
 	int nadj = (1 * simData.gridRes.z + 1)*simData.gridRes.x + 1;
 	if (gc == GRID_UNDEF) return;
 	gc -= nadj;
+	int muli = i*MAX_FLUIDNUM*MAX_SOLIDNUM, kn, muli2 = i*MAX_FLUIDNUM;
 	for (int k = 0; k<simData.mf_catnum; ++k)
 		for(int l = 0; l<MAX_SOLIDNUM; ++l)
-			buf.divDarcyFlux[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] = 0;
+			buf.divDarcyFlux[muli + k*MAX_SOLIDNUM + l] = 0;
 	for (int c = 0; c < simData.gridAdjCnt; c++)
 	{
-		contributeFluidChange(i, gc + simData.gridAdj[c], buf);
+		contributeFluidChange(i, muli, gc + simData.gridAdj[c], buf);
 	}
 	float sum = 0;
+	 
 	for (int k = 1; k < simData.mf_catnum; ++k) 
 	{
+		kn = k*MAX_SOLIDNUM;
 		for (int l = 0; l < MAX_SOLIDNUM; ++l)
 		{
-			buf.divDarcyFlux[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] *= simData.mf_dt;
-			if (buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] == 0)
-				buf.poroVel[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] = make_float3(0, 0, 0);
+			buf.divDarcyFlux[muli + kn + l] *= simData.mf_dt;
+			if (buf.mf_beta[muli + kn + l] == 0)
+				buf.poroVel[muli + kn + l] = make_float3(0, 0, 0);
 
-			if (buf.divDarcyFlux[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] > 0)
+			if (buf.divDarcyFlux[muli + kn + l] > 0)
 			{
-				if (buf.mf_alpha[i*MAX_FLUIDNUM + k] - buf.divDarcyFlux[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] < 0.001)
+				if (buf.mf_alpha[muli2 + k] - buf.divDarcyFlux[muli + kn + l] < 0.001)
 				{
-					buf.divDarcyFlux[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] = buf.mf_alpha[i*MAX_FLUIDNUM + k];
+					buf.divDarcyFlux[muli + kn + l] = buf.mf_alpha[muli2 + k];
 				}
 			}
-			if (buf.divDarcyFlux[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] < 0)
+			if (buf.divDarcyFlux[muli + kn + l] < 0)
 			{
-				if (buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] + buf.divDarcyFlux[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] < 0.001)
-					buf.divDarcyFlux[i*MAX_FLUIDNUM *MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] = -buf.mf_beta[i*MAX_FLUIDNUM *MAX_SOLIDNUM + k*MAX_SOLIDNUM + l];
+				if (buf.mf_beta[muli + kn + l] + buf.divDarcyFlux[muli + kn + l] < 0.001)
+					buf.divDarcyFlux[muli + kn + l] = -buf.mf_beta[muli + kn + l];
 				//just for this example
 				//buf.divDarcyFlux[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] = 0;
 			}
-			buf.mf_beta_next[i*MAX_FLUIDNUM *MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] += buf.divDarcyFlux[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l];
-			buf.mf_alpha_next[i*MAX_FLUIDNUM + k] -= buf.divDarcyFlux[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l];
+			buf.mf_beta_next[muli + kn + l] += buf.divDarcyFlux[muli + kn + l];
+			buf.mf_alpha_next[muli2 + k] -= buf.divDarcyFlux[muli + kn + l];
 
 		}
-		sum += buf.mf_alpha_next[i*MAX_FLUIDNUM + k];
+		sum += buf.mf_alpha_next[muli2 + k];
 	}
 	/*if (buf.mpos[i].y < 40 && sum>0.95 && i % 100 ==0)
 		printf("p %d's alpha is (%f,%f,%f), divDarcyFlux is (%f,%f,%f,%f)(%f,%f,%f,%f)(%f,%f,%f,%f)\n",
@@ -5014,97 +5001,7 @@ __global__ void ComputeFluidChange(bufList buf, int pnum)
 			buf.divDarcyFlux[i*MAX_FLUIDNUM*MAX_SOLIDNUM + 3 * MAX_SOLIDNUM + 2], buf.divDarcyFlux[i*MAX_FLUIDNUM*MAX_SOLIDNUM + 3 * MAX_SOLIDNUM + 3]);
 */
 }
-__device__ void contributeFluidAdvance(int i, int cell, bufList buf, float3*gradBeta, float*DivVelocity)
-{
-	float dsq, c, dsq2, q;
-	register float d2 = simData.psimscale * simData.psimscale;
-	register float r2 = simData.r2;
 
-	float3 dist;
-	float cmterm;
-	float pmterm;
-	int j;
-	if (buf.mgridcnt[cell] == 0) return;
-
-	int cfirst = buf.mgridoff[cell];
-	int clast = cfirst + buf.mgridcnt[cell];
-	//float3 vmr = buf.BetaMixVel[j] - buf.BetaMixVel[i];
-	
-	float3 vmr = buf.mveleval[j] - buf.mveleval[i];
-	for (int cndx = cfirst; cndx < clast; cndx++) 
-	{
-		j = buf.mgrid[cndx];
-		if (buf.MFtype[j] != 0)
-			continue;
-		dist = (buf.mpos[i] - buf.mpos[j])*simData.psimscale;		// dist in cm
-		dsq = dot(dist, dist);
-		if (!(dsq < r2 && dsq > 0))
-			continue;
-		q = sqrt(dsq / r2);
-		dsq = sqrt(dsq);
-
-		if (q <= 0.5)
-			cmterm = simData.gradCubicSplineKern * (3 * q*q - 2 * q);
-		else
-			cmterm = -simData.gradCubicSplineKern * pow(1 - q, 2);
-		cmterm *= buf.mf_restmass[j] * buf.density_solid[j] / dsq;
-		//c = simData.psmoothradius - dsq;
-		//cmterm = c*c*simData.spikykern * buf.mf_restmass[j] * buf.density_solid[j] / dsq;
-
-		for (int k = 1; k < simData.mf_catnum; ++k) 
-		{
-			for (int l = 0; l < MAX_SOLIDNUM; ++l) 
-			{
-				DivVelocity[k*MAX_SOLIDNUM + l] += cmterm *0.5*
-					(buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] + buf.mf_beta[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l])*
-					dot(vmr, dist);
-
-				DivVelocity[k*MAX_SOLIDNUM + l] += cmterm *  
-					dot(dist, 
-						buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] * (buf.poroVel[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] - buf.BetaMixVel[i])+
-						buf.mf_beta[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] * (buf.poroVel[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] - buf.BetaMixVel[j]));
-				//gradBeta[k*MAX_SOLIDNUM+l] += cmterm * (buf.mf_beta[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM+l] - buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM+l])*dist;
-			}
-		}
-	}
-	return;
-}
-
-__device__ void contributeBetaDriftVel(int i, int cell, bufList buf)
-{
-	float dsq, c, dsq2;
-	register float d2 = simData.psimscale * simData.psimscale;
-	register float r2 = simData.r2;
-
-	float3 dist;
-	float cmterm;
-	float pmterm;
-	int j;
-	if (buf.mgridcnt[cell] == 0) return;
-
-	int cfirst = buf.mgridoff[cell];
-	int clast = cfirst + buf.mgridcnt[cell];
-	
-	for (int cndx = cfirst; cndx < clast; cndx++) {
-		j = buf.mgrid[cndx];
-		if (buf.MFtype[j] != 0)
-			continue;
-		dist = (buf.mpos[i] - buf.mpos[j])*simData.psimscale;		// dist in cm
-		dsq = dot(dist, dist);
-		if (!(dsq < r2 && dsq > 0))
-			continue;
-		dsq = sqrt(dsq);
-		
-		for (int k = 1; k < simData.mf_catnum; ++k)
-		{
-			for (int l = 0; l < MAX_SOLIDNUM; ++l)
-			{
-
-			}
-		}
-	}
-	return;
-}
 __device__ void contributeInDriftVel(int i, int muli, float3 ipos, int cell, bufList buf, float3*betaGradterm) {
 	float dsq, c;
 	register float d2 = simData.psimscale * simData.psimscale;
@@ -5113,20 +5010,16 @@ __device__ void contributeInDriftVel(int i, int muli, float3 ipos, int cell, buf
 	float3 dist;
 	float cmterm, q;
 	float pmterm;
-	int j, mulj;
+	int j, mulj, kn;
 
 	if (buf.mgridcnt[cell] == 0) return;
 
 	int cfirst = buf.mgridoff[cell];
 	int clast = cfirst + buf.mgridcnt[cell];
 
-	float3 force = make_float3(0, 0, 0);
-
-	float3 cpgrad[MAX_FLUIDNUM];
-	float3 cpgradsum;
 	for (int cndx = cfirst; cndx < clast; cndx++) {
 		j = buf.mgrid[cndx];
-		mulj = j * MAX_FLUIDNUM;
+		mulj = j * MAX_FLUIDNUM * MAX_SOLIDNUM;
 		dist = (ipos - buf.mpos[j])*simData.psimscale;		// dist in cm
 		dsq = (dist.x*dist.x + dist.y*dist.y + dist.z*dist.z);
 		if (dsq < r2 && dsq > 0) {
@@ -5139,9 +5032,10 @@ __device__ void contributeInDriftVel(int i, int muli, float3 ipos, int cell, buf
 				//pressure
 				for (uint fcount = 1; fcount < simData.mf_catnum; fcount++)
 				{
+					kn = fcount * MAX_SOLIDNUM;
 					//grad alpha
-					for(int l=0;l<MAX_SOLIDNUM;++l)
-						betaGradterm[fcount * MAX_SOLIDNUM + l] += (buf.mf_beta[mulj + fcount * MAX_SOLIDNUM + l] - buf.mf_beta[muli + fcount * MAX_SOLIDNUM + l]) * cmterm * dist;
+					for(int l = 0; l < MAX_SOLIDNUM; ++l)
+						betaGradterm[kn + l] += (buf.mf_beta[mulj + kn + l] - buf.mf_beta[muli + kn + l]) * cmterm * dist;
 				}
 			}
 		}
@@ -5161,67 +5055,145 @@ __global__ void ComputeBetaMixVel(bufList buf, int pnum)
 	uint gc = buf.mgcell[i];
 	if (gc == GRID_UNDEF) return;						// particle out-of-range
 	gc -= nadj;
-	float relax_coef = simData.relax, tdiff, sigma;
+	float relax_coef = simData.relax, tdiff, sigma = 0.001f;
 	float3 betaGradterm[MAX_FLUIDNUM * MAX_SOLIDNUM];
 	float3 sterm[MAX_FLUIDNUM * MAX_SOLIDNUM], vr;
 	float3 ssum, accel = -buf.mforce[i];
-	int muli = i*MAX_FLUIDNUM*MAX_SOLIDNUM;
+	register int muli = i*MAX_FLUIDNUM*MAX_SOLIDNUM, kn;
 	float invdens = 0;
-
+	float cont, conts, contr;
+	float betasum = 0, dsum = 0;
 	buf.BetaMixVel[i] = make_float3(0, 0, 0);
-	float betasum = 0, dsum;
-	for(int k=1;k<MAX_FLUIDNUM;++k)
-		for(int l=0;l<MAX_SOLIDNUM;++l)
-		{
-			buf.BetaMixVel[i] += simData.mf_dens[k]*buf.mf_beta[muli + k*MAX_SOLIDNUM + l] * buf.poroVel[muli + k*MAX_SOLIDNUM + l];
-			betasum += simData.mf_dens[k] * buf.mf_beta[muli + k*MAX_SOLIDNUM + l];
-			betaGradterm[k*MAX_SOLIDNUM + l] = make_float3(0, 0, 0);
-			invdens += buf.mf_beta[muli + k*MAX_SOLIDNUM + l] * simData.mf_dens[k];
-		}
-	invdens = (1 - buf.mf_alpha_sum[i]) / invdens;
-
-	buf.BetaMixVel[i] /= betasum;
 	for (int k = 1; k < MAX_FLUIDNUM; ++k)
+	{
+		kn = k*MAX_SOLIDNUM;
 		for (int l = 0; l < MAX_SOLIDNUM; ++l)
-			buf.mf_vel_inphrel[muli + k*MAX_SOLIDNUM + l] = buf.poroVel[muli + k*MAX_SOLIDNUM + l] - buf.BetaMixVel[i];
+		{
+			buf.BetaMixVel[i] += simData.mf_dens[k] * buf.mf_beta[muli + kn + l] * buf.poroVel[muli + kn + l];
+			betasum += simData.mf_dens[k] * buf.mf_beta[muli + kn + l];
+			betaGradterm[kn + l] = make_float3(0, 0, 0);
+			invdens += buf.mf_beta[muli + kn + l] * simData.mf_dens[k];
+		}
+	}
+	invdens = (1 - buf.mf_alpha_sum[i]) / invdens;
+	buf.BetaMixVel[i] /=  betasum;
+	for (int k = 1; k < MAX_FLUIDNUM; ++k)
+	{
+		kn = k*MAX_SOLIDNUM;
+		for (int l = 0; l < MAX_SOLIDNUM; ++l)
+			buf.mf_vel_inphrel[muli + kn + l] = 0.001 * sigma * (buf.poroVel[muli + kn + l] - buf.BetaMixVel[i]);
+	}
 
 	for (int c = 0; c < simData.gridAdjCnt; c++) {
 		contributeInDriftVel(i, muli, buf.mpos[i], gc + simData.gridAdj[c], buf, betaGradterm);
 	}
+
 	dsum = 0; ssum = make_float3(0, 0, 0);
 	for (uint fcount = 1; fcount < simData.mf_catnum; fcount++)
 	{
+		kn = fcount*MAX_SOLIDNUM;
 		for (int l = 0; l < MAX_SOLIDNUM; ++l) 
 		{
-			float temp = buf.mf_beta[muli + fcount * MAX_SOLIDNUM + l] / (1 - buf.mf_alpha_sum[i]);
+			float temp = buf.mf_beta[muli + kn + l] / (1 - buf.mf_alpha_sum[i]);
 			dsum += temp * simData.mf_dens[fcount] * simData.mf_dens[fcount] * invdens;
 			if (temp > 0.01)
-				sterm[fcount * MAX_SOLIDNUM + l] = betaGradterm[fcount * MAX_SOLIDNUM + l] / temp;
+				sterm[kn + l] = betaGradterm[kn + l] / temp;
 			else
-				sterm[fcount * MAX_SOLIDNUM + l] = make_float3(0, 0, 0);
-			ssum += sterm[fcount * MAX_SOLIDNUM + l] * temp * simData.mf_dens[fcount] * invdens;
+				sterm[kn + l] = make_float3(0, 0, 0);
+			ssum += sterm[kn + l] * temp * simData.mf_dens[fcount] * invdens;
 		}
 	}
-	float cont, conts, contr;
+	
 	cont = simData.cont;
 	conts = simData.cont1;
 	contr = simData.cont2;
 	for (uint fcount = 1; fcount < simData.mf_catnum; fcount++)
 	{
+		kn = fcount*MAX_SOLIDNUM;
 		for (int l = 0; l < MAX_SOLIDNUM; ++l) 
 		{
 			tdiff = simData.mf_dens[fcount] - dsum;
 			tdiff *= relax_coef;
 			vr = accel * tdiff;
 			//accel term
-			buf.mf_vel_inphrel[muli + fcount*MAX_SOLIDNUM + l] += vr;
+			buf.mf_vel_inphrel[muli + kn + l] += 0.001*sigma * vr;
 			//grad alpha term
-			buf.mf_vel_inphrel[muli + fcount*MAX_SOLIDNUM + l] -=
-				cont * conts * sigma * (sterm[fcount * MAX_SOLIDNUM + l] - ssum);
+			buf.mf_vel_inphrel[muli + kn + l] -=
+				2 * sigma * cont * conts * (sterm[kn + l] - ssum);
 		}
 	}
+	//if (i % 100 == 0 && buf.mpos[i].x < -20 && buf.mf_alpha_sum[i]<0.5)
+	//	printf("mix vel is (%f,%f,%f),accel is (%f,%f,%f), dsum is %f, ssum is (%f,%f,%f), betasum is %f, beta is (%f,%f,%f,%f)(%f,%f,%f,%f)(%f,%f,%f,%f), alpha is (%f,%f,%f)\n",
+	//		buf.BetaMixVel[i].x, buf.BetaMixVel[i].y, buf.BetaMixVel[i].z,
+	//		accel.x, accel.y, accel.z, dsum, ssum.x, ssum.y, ssum.z, betasum,
+	//		buf.mf_beta[muli + 1 * MAX_SOLIDNUM + 0], buf.mf_beta[muli + 1 * MAX_SOLIDNUM + 1], buf.mf_beta[muli + 1 * MAX_SOLIDNUM + 2], buf.mf_beta[muli + 1 * MAX_SOLIDNUM + 3],
+	//		buf.mf_beta[muli + 2 * MAX_SOLIDNUM + 0], buf.mf_beta[muli + 2 * MAX_SOLIDNUM + 1], buf.mf_beta[muli + 2 * MAX_SOLIDNUM + 2], buf.mf_beta[muli + 2 * MAX_SOLIDNUM + 3],
+	//		buf.mf_beta[muli + 3 * MAX_SOLIDNUM + 0], buf.mf_beta[muli + 3 * MAX_SOLIDNUM + 1], buf.mf_beta[muli + 3 * MAX_SOLIDNUM + 2], buf.mf_beta[muli + 3 * MAX_SOLIDNUM + 3],
+	//		buf.mf_alpha[i*MAX_FLUIDNUM + 1], buf.mf_alpha[i*MAX_FLUIDNUM + 2], buf.mf_alpha[i*MAX_FLUIDNUM + 3]);
+
 }
 
+__device__ void contributeFluidAdvance(int i, int cell, bufList buf, int muli, float*DivVelocity)
+{
+	float dsq, c, dsq2, q;
+	register float d2 = simData.psimscale * simData.psimscale;
+	register float r2 = simData.r2;
+
+	float3 dist;
+	float cmterm;
+	float pmterm;
+	int j;
+	if (buf.mgridcnt[cell] == 0) return;
+
+	int cfirst = buf.mgridoff[cell];
+	int clast = cfirst + buf.mgridcnt[cell];
+	//float3 vmr = buf.BetaMixVel[j] - buf.BetaMixVel[i];
+
+	float3 vmr = buf.mveleval[j] - buf.mveleval[i];
+	int mulj, kn;
+	for (int cndx = cfirst; cndx < clast; cndx++)
+	{
+		j = buf.mgrid[cndx];
+		if (buf.MFtype[j] != 0)
+			continue;
+		dist = (buf.mpos[i] - buf.mpos[j])*simData.psimscale;		// dist in cm
+		dsq = dot(dist, dist);
+		if (!(dsq < r2 && dsq > 0))
+			continue;
+		q = sqrt(dsq / r2);
+		dsq = sqrt(dsq);
+
+		if (q <= 0.5)
+			cmterm = simData.gradCubicSplineKern * (3 * q*q - 2 * q);
+		else
+			cmterm = -simData.gradCubicSplineKern * pow(1 - q, 2);
+		cmterm *= buf.mf_restmass[j] * buf.density_solid[j] / dsq;
+		//c = simData.psmoothradius - dsq;
+		//cmterm = c*c*simData.spikykern * buf.mf_restmass[j] * buf.density_solid[j] / dsq;
+		mulj = j*MAX_FLUIDNUM*MAX_SOLIDNUM;
+		for (int k = 1; k < simData.mf_catnum; ++k)
+		{
+			kn = k*MAX_SOLIDNUM;
+			for (int l = 0; l < MAX_SOLIDNUM; ++l)
+			{
+				DivVelocity[kn + l] += cmterm *0.5*
+					(buf.mf_beta[muli + kn + l] + buf.mf_beta[mulj + kn + l])*
+					dot(vmr, dist);
+
+				//DivVelocity[k*MAX_SOLIDNUM + l] += cmterm *  
+				//	dot(dist, 
+				//		buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] * (buf.poroVel[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] - buf.BetaMixVel[i])+
+				//		buf.mf_beta[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] * (buf.poroVel[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] - buf.BetaMixVel[j]));
+				DivVelocity[kn + l] += cmterm *
+					dot(dist,
+						buf.mf_beta[muli + kn + l] * buf.mf_vel_inphrel[muli + kn + l] +
+						buf.mf_beta[mulj + kn + l] * buf.mf_vel_inphrel[mulj + kn + l]);
+
+			}
+		}
+	}
+	return;
+}
 __global__ void ComputeBetaAdvance(bufList buf, int pnum)
 {
 	uint i = __mul24(blockIdx.x, blockDim.x) + threadIdx.x;	// particle index				
@@ -5236,38 +5208,39 @@ __global__ void ComputeBetaAdvance(bufList buf, int pnum)
 	uint gc = buf.mgcell[i];
 	if (gc == GRID_UNDEF) return;						// particle out-of-range
 	gc -= nadj;
-	float3 gradBeta[MAX_FLUIDNUM*MAX_SOLIDNUM];
+	
 	float DivVelocity[MAX_FLUIDNUM*MAX_SOLIDNUM],betachange[MAX_FLUIDNUM*MAX_SOLIDNUM];
 	float sigma = sqrt(dot(buf.mveleval[i], buf.mveleval[i]) / dot(buf.BetaMixVel[i],buf.BetaMixVel[i]));
-	//if (i % 10000 == 0)
-	//	printf("sigma is %f\n", sigma);
+	register int muli = i *MAX_FLUIDNUM*MAX_SOLIDNUM;
+	int kn;
 	for (int k = 1; k < simData.mf_catnum; ++k)
 	{
+		kn = k*MAX_SOLIDNUM;
 		for (int l = 0; l < MAX_SOLIDNUM; ++l) 
 		{
-			gradBeta[k*MAX_SOLIDNUM + l] = make_float3(0, 0, 0);
-			DivVelocity[k*MAX_SOLIDNUM + l] = 0;
+			DivVelocity[kn + l] = 0;
 		}
 	}
 	for (int c = 0; c < simData.gridAdjCnt; c++)
 	{
-		contributeFluidAdvance(i, gc + simData.gridAdj[c], buf, gradBeta, DivVelocity);
+		contributeFluidAdvance(i, gc + simData.gridAdj[c], buf, muli, DivVelocity);
 	}
-	//float betasum = 0;
+	
 	for (int k = 1; k < simData.mf_catnum; ++k) 
 	{
+		kn = k*MAX_SOLIDNUM;
 		for (int l = 0; l < MAX_SOLIDNUM; ++l) 
 		{
 			//betachange[k*MAX_SOLIDNUM+l] = sigma*simData.mf_dt*(-DivVelocity[k*MAX_SOLIDNUM + l] + dot(buf.mveleval[i], gradBeta[k*MAX_SOLIDNUM + l]));
-			betachange[k*MAX_SOLIDNUM + l] = -simData.mf_dt*DivVelocity[k*MAX_SOLIDNUM + l];
+			betachange[kn + l] = -simData.mf_dt*DivVelocity[kn + l];
 			
 			//betachange limit
-			if (betachange[k*MAX_SOLIDNUM + l] < -0.99)
+			if (betachange[kn + l] < -0.99)
 			{
-				betachange[k*MAX_SOLIDNUM + l] = -0.99;
+				betachange[kn + l] = -0.99;
 			}
 			//betasum += buf.mf_beta_next[i*MAX_FLUIDNUM + k];
-			buf.mf_beta_next[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l] += betachange[k*MAX_SOLIDNUM + l];
+			buf.mf_beta_next[muli + kn + l] += betachange[kn + l];
 		}
 	}
 
@@ -5286,7 +5259,7 @@ __global__ void ComputeBetaAdvance(bufList buf, int pnum)
 	//		//		buf.mveleval[i].x, buf.mveleval[i].y, buf.mveleval[i].z);
 	//		//}
 	//	}
-	//if (betasum > 0.5&&i % 1000 == 0 && buf.solidCount[i*MAX_SOLIDNUM + 0] != 0)
+	//if (buf.mf_alpha_sum[i] < 0.5&&i % 100 == 0 && buf.solidCount[i*MAX_SOLIDNUM + 0] != 0)
 	//	printf("beta is (%f,%f,%f,%f)(%f,%f,%f,%f)(%f,%f,%f,%f), beta change is (%f,%f,%f,%f)(%f,%f,%f,%f)(%f,%f,%f,%f), density is %f\n",
 	//		buf.mf_beta[i*MAX_SOLIDNUM*MAX_FLUIDNUM + 1 * MAX_SOLIDNUM + 0], buf.mf_beta[i*MAX_SOLIDNUM*MAX_FLUIDNUM + 1 * MAX_SOLIDNUM + 1], 
 	//		buf.mf_beta[i*MAX_SOLIDNUM*MAX_FLUIDNUM + 1 * MAX_SOLIDNUM + 2],
@@ -5720,7 +5693,7 @@ __global__ void ApplyPressureForce(bufList buf, int pnum)
 	
 	buf.maccel[i] = buf.mforce[i];
 }
-__device__ float3 contributeViscosity(int i, int muli, float idens, float3 pos, int cell, bufList buf, float* ialpha, float3* ivmk, float &value)
+__device__ float3 contributeViscosity(int i, int muli, int muloffseti, float idens, float3 pos, int cell, bufList buf, float* ialpha, float3* ivmk, float &value)
 {
 	float3 force = make_float3(0, 0, 0);
 	if (buf.mgridcnt[cell] == 0)return force;
@@ -5729,25 +5702,25 @@ __device__ float3 contributeViscosity(int i, int muli, float idens, float3 pos, 
 	register float r2 = simData.r2;
 	float3 dist;
 	float c, dsq2, dsq;
-	int j, mulj;
+	int j, mulj, muloffsetj, kn;
 	float3 vmr;
 	float cmterm, vmterm;
 	int cfirst = buf.mgridoff[cell];
 	int clast = cfirst + buf.mgridcnt[cell];
-
-	float xvprod, phiij, densityij, PIij, q;
+	float betasum1, betasum2;
 	for (int cndx = cfirst; cndx < clast; cndx++)
 	{
 		j = buf.mgrid[cndx];
 		if (buf.misbound[j])
 			continue;
-		mulj = j * MAX_FLUIDNUM;
 		dist = (buf.mpos[i] - buf.mpos[j])*simData.psimscale;
 		dsq2 = dot(dist, dist);
-		q = sqrt(dsq2 / r2);
+		//q = sqrt(dsq2 / r2);
 
 		if (!(dsq2 < r2&&dsq2>0))
 			continue;
+		muloffsetj = j * MAX_FLUIDNUM;
+		mulj = muloffsetj * MAX_SOLIDNUM;
 		dsq = sqrt(dsq2);
 		//viscosity between fluid
 		vmr = buf.mveleval[i] - buf.mveleval[j];
@@ -5767,19 +5740,37 @@ __device__ float3 contributeViscosity(int i, int muli, float idens, float3 pos, 
 			if (buf.MFtype[i] == 0)
 			{
 				float fluidsum = 0, beta[MAX_FLUIDNUM], beta2[MAX_FLUIDNUM];
-				for (int k = 1; k < simData.mf_catnum; ++k)
+				//version 1
+				//for (int k = 1; k < simData.mf_catnum; ++k)
+				//{
+				//	if (buf.mf_alpha[muloffsetj + k] + buf.mf_alpha[muloffseti + k] != 0)
+				//		fluidsum += buf.mf_alpha[muloffsetj + k] * buf.mf_alpha[muloffseti + k]
+				//		/ (buf.mf_alpha[muloffsetj + k] + buf.mf_alpha[muloffseti + k]);
+				//	beta[k] = beta2[k] = 0;
+				//	for (int l = 0; l < MAX_SOLIDNUM; ++l)
+				//	{
+				//		beta[k] += buf.mf_beta[muli + k*MAX_SOLIDNUM + l];
+				//		beta2[k] += buf.mf_beta[mulj + k*MAX_SOLIDNUM + l];
+				//	}
+				//	if (beta[k] + beta2[k] != 0)
+				//		fluidsum += beta[k] * beta2[k] / (beta[k] + beta2[k]);
+				//}
+
+				//version 2
+				if (buf.mf_alpha_sum[i] * buf.mf_alpha_sum[j] > 0.001)
+					fluidsum += 2 * buf.mf_alpha_sum[i] * buf.mf_alpha_sum[j]
+						/ (buf.mf_alpha_sum[i] + buf.mf_alpha_sum[j]);
+				for (int l = 0; l < MAX_SOLIDNUM; ++l)
 				{
-					if (buf.mf_alpha[j*MAX_FLUIDNUM + k] + buf.mf_alpha[i*MAX_FLUIDNUM + k] != 0)
-						fluidsum += buf.mf_alpha[j*MAX_FLUIDNUM + k] * buf.mf_alpha[i*MAX_FLUIDNUM + k]
-						/ (buf.mf_alpha[j*MAX_FLUIDNUM + k] + buf.mf_alpha[i*MAX_FLUIDNUM + k]);
-					beta[k] = beta2[k] = 0;
-					for (int l = 0; l < MAX_SOLIDNUM; ++l)
+					betasum1 = betasum2 = 0;
+					for (int k = 1; k < MAX_FLUIDNUM; ++k)
 					{
-						beta[k] += buf.mf_beta[i*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l];
-						beta2[k] += buf.mf_beta[j*MAX_FLUIDNUM*MAX_SOLIDNUM + k*MAX_SOLIDNUM + l];
+						betasum1 += buf.mf_beta[muli + k*MAX_SOLIDNUM + l];
+						betasum2 += buf.mf_beta[mulj + k*MAX_SOLIDNUM + l];
 					}
-					if (beta[k] + beta2[k] != 0)
-						fluidsum += beta[k] * beta2[k] / (beta[k] + beta2[k]);
+					if (betasum1 * betasum2 > 0.001)
+						fluidsum += 2 * betasum1 * betasum2 /
+							(betasum1 + betasum2);
 				}
 				force += fluidsum * vmterm * vmr;
 			}
@@ -5805,7 +5796,7 @@ __global__ void ComputeOtherForce(bufList buf, int pnum, float time)
 	float normalize = 0;
 
 	register uint muloffseti = i * MAX_FLUIDNUM;
-	
+	register uint muli = muloffseti * MAX_SOLIDNUM;
 	register float alpha[MAX_FLUIDNUM];
 	register float3 ivmk[MAX_FLUIDNUM];
 	
@@ -5819,16 +5810,34 @@ __global__ void ComputeOtherForce(bufList buf, int pnum, float time)
 	float value = 0;
 	for (int c = 0; c < simData.gridAdjCnt; c++)
 	{
-		force += contributeViscosity(i, muloffseti, buf.mdensity[i], pos, gc + simData.gridAdj[c], buf, alpha, ivmk, value);
+		force += contributeViscosity(i, muli, muloffseti, buf.mdensity[i], pos, gc + simData.gridAdj[c], buf, alpha, ivmk, value);
 	}
-	//force = make_float3(0, 0, 0);
-	//bound force and gravity
-	//buf.mforce[i] += getBoundForce(i, buf, force, time);
-	//if (sqrt(dot(force, force)) > 1)
-	//	printf("p %d's visco force is (%f,%f,%f)\n", i, force.x, force.y, force.z);
-	buf.mforce[i] += force;
-	//buf.fluidForce[i] = force;
+
+	// Get particle vars
+	register float3 accel;
+	register float speed;
+	accel = force;
+
+	speed = accel.x*accel.x + accel.y*accel.y + accel.z*accel.z;
+	if (speed > simData.AL2) {
+		//printf("other accel is (%f,%f,%f), vel is (%f,%f,%f)\n",
+		//	accel.x, accel.y, accel.z, buf.mveleval[i].x, buf.mveleval[i].y, buf.mveleval[i].z);
+		accel *= simData.AL / sqrt(speed);
+	}
+	buf.mforce[i] = accel;
+	buf.fluidForce[i] = accel;
 	buf.maccel[i] = buf.mforce[i];
+	if (buf.misbound[i] != 1)
+	{
+		buf.vel_mid[i] = buf.mveleval[i] + simData.mf_dt*accel;
+	}
+	else
+	{
+		buf.mveleval[i] = make_float3(0, 0, 0);		// v(t+1) = [v(t-1/2) + v(t+1/2)] * 0.5			
+		buf.maccel[i] = make_float3(0, 0, 0);
+		buf.mforce[i] = make_float3(0, 0, 0);
+		buf.vel_mid[i] = make_float3(0, 0, 0);
+	}
 }
 __device__ float contributeColorValue(int i, float3 pos, int cell, bufList buf)
 {

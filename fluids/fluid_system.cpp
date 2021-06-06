@@ -233,7 +233,7 @@ void FluidSystem::RunSimulateMultiCUDAFull()
 
 	QueryPerformanceCounter(&t2);
 	m_CostTime += (t2.QuadPart - t1.QuadPart)*1.0 / tc.QuadPart;
-	if (m_Frame == 3000)
+	if (m_Frame == 1000)
 	{
 		cout << "ave time :" << m_CostTime / m_Frame << endl;
 	}
@@ -321,7 +321,7 @@ void FluidSystem::Record()
 	//if ( channels == 2 ) {	
 	//	dsize = sizeof(Vector3DF)+sizeof(DWORD);
 	for (int n = 0; n < mNumPoints; n++) {
-		if (*bound++ == 1)
+		if (*bound++ == 1 && *type == 1)
 		{
 			ppos++; pclr++; type++;
 			continue;
@@ -340,13 +340,13 @@ void FluidSystem::Record()
 		{
 			if (*type > 2)
 			{
-				float ratio = 1.5;
+				
 				float beta[MAX_FLUIDNUM];
 				for (int k = 1; k < MAX_FLUIDNUM; ++k)
 					beta[k] = m_beta[n*MAX_FLUIDNUM*MAX_SOLIDNUM + k * MAX_SOLIDNUM + *type - 3];
 				float sum = beta[1] + beta[2] + beta[3];
 				
-				out << ratio*beta[1] << " " << ratio*beta[2] << " " << ratio*beta[3] << " " << 0.3 + ratio*sum <<" ";
+				out << sqrt(beta[1]) << " " << sqrt(beta[2]) << " " << sqrt(beta[3]) << " " << 0.2 + sqrt(sum) <<" ";
 			}
 		}
 		out << *type << endl;
@@ -490,7 +490,7 @@ void FluidSystem::Run (int width, int height)
 	RunSimulateMultiCUDAFull();
 	//DWORD end = timeGetTime();
 	//printf("simulate time %d\n", end - start);
-	if ( GetYan(START_OUTPUT) && m_Frame % (int)(0.0025 / m_DT) == 0 && recordNum < 500) {
+	if ( GetYan(START_OUTPUT) && m_Frame % (int)(0.005 / m_DT) == 0 && recordNum < 600) {
 		//StartRecord();
 		start.SetSystemTime ( ACC_NSEC );
 		Record ();
