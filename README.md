@@ -29,4 +29,7 @@ This project is based on Fluids v.3 http://fluids3.com  We thank 2012 Hoetzlein,
 To run this code, please config the Fluids v.3 environment first and cover the source code.
 
 
-
+![threefilter](https://github.com/BenXu86/DataSet/raw/main/threeFilter.gif)
+![dumbbell](https://github.com/BenXu86/DataSet/raw/main/%E5%B0%8F%E7%90%83.gif)
+![bunny](https://github.com/BenXu86/DataSet/raw/main/bunny.gif)
+![S](https://github.com/BenXu86/DataSet/raw/main/S.gif)
