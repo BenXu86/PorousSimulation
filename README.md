@@ -3,6 +3,7 @@
 Bo Ren*, Ben Xu*(*joint first author)  Chenfeng Li
 
 *ACM SIGGRAPH 2021*
+
 ## Abstract
 
 Porous materials are common in daily life. They include granular
@@ -28,6 +29,4 @@ This project is based on Fluids v.3 http://fluids3.com  We thank 2012 Hoetzlein,
 To run this code, please config the Fluids v.3 environment first and cover the source code.
 
 
-
-https://user-images.githubusercontent.com/27052155/120910400-4095c400-c6b1-11eb-900e-793d3f914639.mp4
 
