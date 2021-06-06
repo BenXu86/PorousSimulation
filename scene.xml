@@ -1,0 +1,115 @@
+<Fluid>
+	<DT>			0.01		</DT>
+	<SimScale>		0.005		</SimScale>
+	<Viscosity>	0.5		</Viscosity>
+	<BoundStiff>	0.5	</BoundStiff>
+	<BoundDamp>	1000.0		</BoundDamp>
+	<AccelLimit>	150.0		</AccelLimit>
+	<VelLimit>		1		</VelLimit>
+	<PointGravAmt>	0.0		</PointGravAmt>
+	<PointGravPos>	0,0,0		</PointGravPos>
+	<PlaneGravDir>	0,-9.8,0	</PlaneGravDir>
+	<GroundSlope>	0.0		</GroundSlope>
+	<WaveForceMin>	0.0		</WaveForceMin>
+	<WaveForceMax>	0.0		</WaveForceMax>
+	<VolMin> -100, -40, -100 </VolMin>
+	<VolMax> 100,  200,  100 </VolMax>
+</Fluid>
+<MultiScene id="1">
+<!-- single bunny -->
+	<Name>		Test 	</Name>
+	<DT>			0.0005	</DT>
+	<AccelLimit>	300.0		</AccelLimit>
+	<VelLimit>		1		</VelLimit>
+	<IntStiff>		0.03	 </IntStiff>
+	<RestDensity>	600.0		</RestDensity>
+	<SmoothRadius> 0.015 </SmoothRadius>
+	<Viscosity>	4		</Viscosity>
+	<Mass> 0.00020543 </Mass>
+	<Radius> 0.01 </Radius>
+	<BoundStiff>	500000.0	</BoundStiff>
+	<FluidCount> 4 </FluidCount>
+	<!-- solid -->
+	<VolMin0>		-49.2,  2,  0.8	</VolMin0>
+	<VolMax0>		49.2,	50,	34.2	</VolMax0>
+	<VolMin1>		-40,  51,  5	</VolMin1>
+	<VolMax1>		40,	90,	30	</VolMax1>
+	<VolMin2>		-29,  25,  1	</VolMin2>
+	<VolMax2>		4,	45,	34	</VolMax2>
+	<VolMin3>		-22,  3,  8	</VolMin3>
+	<VolMax3>		-3,	17,	27	</VolMax3>
+	<!-- fluid -->
+	<VolMin4>		-25, 92 ,  5	</VolMin4>
+	<VolMax4>		0,	140,	30	</VolMax4>
+	<BoundMin>		-50,0,0		</BoundMin>
+	<BoundMax>      50,100,35		</BoundMax>
+	<ScaleP>	48	</ScaleP>
+	<ScaleDis>	1.1	</ScaleDis>
+	<sb3>	-81, -1, -1 </sb3>
+	<sb6>	0, 100, 81 </sb6>
+	<mb3>	-50, 0, 0	</mb3>
+	<mb6>	0, 100, 60 </mb6>
+	<WaveForceFreq>	0	</WaveForceFreq>
+	<LoadWhich>		0	</LoadWhich>
+	<Cont> 1.0 , 1.0,  1.0 </Cont>
+	<Relax>0.000001 </Relax>
+	<!-- <Relax>0.000001 </Relax> -->
+	<Relax2>1 </Relax2>
+	<!-- <Relax2>0.01 </Relax2> -->
+	<Num> 5000 </Num>
+	<MassRatio> 1, 1, 1, 1 </MassRatio>
+	<DensityRatio> 1, 1, 1, 1 </DensityRatio>
+	<ViscRatio> 1, 1, 1, 1 </ViscRatio>
+	<Panr> 1.0 </Panr>
+	<Omega> 10.0 </Omega>
+	<FSA>  250 </FSA>
+	<FSB>  0  </FSB>
+	<coN>  2.55 </coN>
+	<phi> 0 </phi>
+	<Yradius> 10000 </Yradius>
+	<BoundViscFactor> 10 </BoundViscFactor>
+	<fluidPressureFactor> 0.03  </fluidPressureFactor>
+	<solidPressureFactor> 0.9 </solidPressureFactor>
+	<BoundXZdamp> 0.1  </BoundXZdamp>
+	<!-- <miu>500000000</miu>
+	<lambda>1000000</lambda> -->
+	<miu>250500000</miu>
+	<lambda>100000000</lambda>
+	<maxNeighborNum>50</maxNeighborNum>
+	<porosity>0.6</porosity>
+	<!-- <capillary>0.1</capillary> -->
+	<capillary>0.05</capillary>
+	<permeability>0.000002</permeability>
+	<!-- <permeabilityRatio1>0,0,0,0</permeabilityRatio1>
+	<permeabilityRatio2>0,2,0,0</permeabilityRatio2>
+	<permeabilityRatio3>0.5,0,0.75,0</permeabilityRatio3>
+	<permeabilityRatio4>1.2,0,0,4</permeabilityRatio4>
+	<pressureRatio1>0,0,0,0</pressureRatio1>
+	<pressureRatio2>0,2,0,0</pressureRatio2>
+	<pressureRatio3>1.9,0,2,0</pressureRatio3>
+	<pressureRatio4>2,0,0,1</pressureRatio4> -->
+	<permeabilityRatio1>0,0,0,0</permeabilityRatio1>
+	<permeabilityRatio2>0,1,0,0</permeabilityRatio2>
+	<permeabilityRatio3>0.5,0,0.75,0</permeabilityRatio3>
+	<permeabilityRatio4>1,0,0,2</permeabilityRatio4>
+	<pressureRatio1>0,0,0,0</pressureRatio1>
+	<pressureRatio2>0,2,0,0</pressureRatio2>
+	<pressureRatio3>1.9,0,2,0</pressureRatio3>
+	<pressureRatio4>2,0,0,2</pressureRatio4>
+
+	<bulkModulus>250,1000,360000,30000</bulkModulus>
+	<!-- <poroDeformStrength>0.05</poroDeformStrength> -->
+	<poroDeformStrength>0.00</poroDeformStrength>
+	<!-- <capillaryForceRatio>0.001</capillaryForceRatio> -->
+	<capillaryForceRatio>2</capillaryForceRatio>
+	<!-- <SurfaceTension>0.001</SurfaceTension> -->
+	<SurfaceTension>000</SurfaceTension>
+	<ColorValue>1,1,1,1</ColorValue>
+	<!-- bulkModulus_porous,grains,solid,fluid    4260355072-->
+</MultiScene>
+<BoundInfo id="1">
+	<Viscosity>	0.35		</Viscosity>
+	<RestDensity>	600.0		</RestDensity>
+	<Mass>		0.00020543	</Mass>
+	<BoundStiff>	50000	</BoundStiff>
+</BoundInfo>
