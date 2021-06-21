@@ -18,8 +18,9 @@ state tracking and runtime particle deletion/insertion. Our unified
 model is flexible and stable to cope with multiple fluid interacting with porous materials, and it can ensure consistent mass and
 momentum transport over the whole simulation space.
 
-## Paper  [[pdf]](http://ren-bo.net/papers/rb_multiporous2021.pdf)
-## Video  [[mp4]](http://ren-bo.net/Videos/rb_multiporous2021.mp4)
+## Paper  [[pdf]](https://github.com/BenXu86/MyPapers/raw/main/Unified%20Particle%20System%20for%20Multiple-fluid%20Flow%20and%20Porous%20Material.pdf)
+## Video  [[mp4]](https://drive.google.com/uc?export=download&id=1A8UgPAVwoFv8oHlNVXoDUYtZxpWhZXFK)
+
 ## Description
 
 On master branch, interaction between single-phase fluid and porous solid is implemented. 
